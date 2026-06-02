@@ -1,0 +1,80 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# DuskBird Caddyfile
+#
+# Pick ONE of the three TLS options below and uncomment it.
+# Delete or comment out the other two options.
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Option A: HTTP-01 ACME (ports 80 + 443 open to internet) ─────────────────
+# Replace "api.yourdomain.com" with your actual domain.
+# Caddy obtains a Let's Encrypt certificate automatically.
+#
+# {
+#     email admin@yourdomain.com
+# }
+#
+# api.yourdomain.com {
+#     reverse_proxy api:3000
+#     header {
+#         -Server
+#         Strict-Transport-Security "max-age=31536000; includeSubDomains"
+#     }
+# }
+#
+# files.yourdomain.com {
+#     # MinIO web console — restrict to LAN only
+#     @blocked not remote_ip 192.168.0.0/16 10.0.0.0/8
+#     respond @blocked "Forbidden" 403
+#     reverse_proxy minio:9001
+# }
+
+
+# ── Option B: Internal CA / LAN only (no external exposure) ──────────────────
+# Caddy acts as its own CA. Install the root certificate from
+# caddy_data/caddy/pki/authorities/local/root.crt on each client device.
+# Replace hostnames with whatever you use on your LAN (e.g. /etc/hosts entries).
+#
+# {
+#     local_certs
+# }
+#
+# api.home.lan {
+#     tls internal
+#     reverse_proxy api:3000
+# }
+#
+# files.home.lan {
+#     tls internal
+#     reverse_proxy minio:9001
+# }
+
+
+# ── Option C: DNS-01 via Cloudflare (recommended for NAT/CGNAT) ──────────────
+# Requires a custom Caddy image — see caddy/Dockerfile.
+# Set CLOUDFLARE_API_TOKEN in your .env.
+# Replace domain names with your own.
+#
+{
+    email admin@yourdomain.com
+}
+
+api.yourdomain.com {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+    reverse_proxy api:3000
+    header {
+        -Server
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}
+
+files.yourdomain.com {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+    # MinIO web console — restrict to LAN only
+    @blocked not remote_ip 192.168.0.0/16 10.0.0.0/8
+    respond @blocked "Forbidden" 403
+    reverse_proxy minio:9001
+}

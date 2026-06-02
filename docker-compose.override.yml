@@ -1,0 +1,27 @@
+services:
+  api:
+    build:
+      target: development
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./api:/app
+      - /app/node_modules
+    command: npm run start:dev
+    environment:
+      NODE_ENV: development
+
+  postgres:
+    ports:
+      - "5432:5432"
+
+  minio:
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  # Caddy is not useful locally (no real domain = no cert).
+  # Disable it so it doesn't clutter the logs.
+  caddy:
+    profiles:
+      - production

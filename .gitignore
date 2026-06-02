@@ -1,0 +1,35 @@
+# Environment — never commit real secrets
+.env
+.env.local
+.env.production
+web/.env.local
+web/.env.production
+
+# Node
+node_modules/
+api/node_modules/
+api/dist/
+web/node_modules/
+web/dist/
+
+# Local dev storage (created automatically by docker compose)
+local-storage/
+
+# Logs
+*.log
+logs/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Caddy data (contains TLS private keys)
+caddy_data/
+
+# Firebase
+.firebase/
