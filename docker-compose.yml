@@ -71,6 +71,21 @@ services:
     mem_limit: 1g
     cpus: "1"
 
+  dnsmasq:
+    image: 4km3/dnsmasq:2.85-r2
+    container_name: duskbird_dnsmasq
+    restart: unless-stopped
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+    cap_add:
+      - NET_ADMIN
+    command: -k --no-resolv --server=1.1.1.1 --server=8.8.8.8 --address=/${DOMAIN}/${NUC_LOCAL_IP}
+    profiles:
+      - production
+    networks:
+      - internal
+
   caddy:
     image: caddy:2-alpine
     container_name: duskbird_caddy

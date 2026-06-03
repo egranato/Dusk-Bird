@@ -2,7 +2,6 @@ import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import * as mediaApi from '../../api/media';
-import { useAuth } from '../../contexts/AuthContext';
 import TagInput from '../shared/TagInput';
 import type { TagResponse } from '../../types/api';
 
@@ -24,7 +23,6 @@ function filterMediaFiles(fileList: FileList | File[]): File[] {
 
 export default function UploadModal({ tags, onClose }: Props) {
   const qc = useQueryClient();
-  const { isAdmin } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -143,7 +141,6 @@ export default function UploadModal({ tags, onClose }: Props) {
             allTags={tags}
             appliedIds={new Set(selectedTags.map(n => tags.find(t => t.name === n)?.id ?? ''))}
             onAdd={(name) => setSelectedTags((prev) => prev.includes(name) ? prev : [...prev, name])}
-            isAdmin={isAdmin}
             placeholder="Search tags…"
           />
         </div>

@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as mediaApi from '../../api/media';
-import { useAuth } from '../../contexts/AuthContext';
 import TagInput from '../shared/TagInput';
 import type { MediaItem, TagResponse } from '../../types/api';
 
@@ -13,7 +12,6 @@ interface Props {
 
 export default function BulkTagModal({ selectedItems, allTags, onClose }: Props) {
   const qc = useQueryClient();
-  const { isAdmin } = useAuth();
 
   // Staged changes — nothing hits the API until Done is clicked.
   const [toAdd, setToAdd] = useState<string[]>([]);            // tag names
@@ -68,6 +66,15 @@ export default function BulkTagModal({ selectedItems, allTags, onClose }: Props)
     toAdd.map((name) => allTags.find((t) => t.name === name)?.id ?? ''),
   );
 
+  // Quick-add: top tags by usage that aren't on every selected item and aren't staged already.
+  const fullyPresentIds = new Set(
+    presentTags.filter(({ count }) => count === selectedItems.length).map(({ tag }) => tag.id),
+  );
+  const quickAdd = allTags
+    .filter((t) => !fullyPresentIds.has(t.id) && !stagedAddIds.has(t.id) && !toAdd.includes(t.name))
+    .sort((a, b) => b.usageCount - a.usageCount)
+    .slice(0, 6);
+
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-surface-1 rounded-2xl p-6 w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
@@ -91,11 +98,24 @@ export default function BulkTagModal({ selectedItems, allTags, onClose }: Props)
             </div>
           )}
 
+          {quickAdd.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {quickAdd.map((t) => (
+                <button
+                  key={t.id}
+                  onClick={() => stageAdd(t.name)}
+                  className="text-xs px-2.5 py-1 rounded-full border border-dashed border-zinc-600 text-zinc-400 hover:border-brand hover:text-brand transition-colors"
+                >
+                  + {t.name}
+                </button>
+              ))}
+            </div>
+          )}
+
           <TagInput
             allTags={allTags}
             appliedIds={stagedAddIds}
             onAdd={stageAdd}
-            isAdmin={isAdmin}
             placeholder="Tag name…"
           />
         </div>

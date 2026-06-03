@@ -5,7 +5,6 @@ import * as mediaApi from '../api/media';
 import * as tagsApi from '../api/tags';
 import AppLayout from '../components/layout/AppLayout';
 import TagInput from '../components/shared/TagInput';
-import { useAuth } from '../contexts/AuthContext';
 import type { TagSummary } from '../types/api';
 
 const BATCH_SIZE = 50;
@@ -35,7 +34,6 @@ function TagChip({
 
 export default function TaggingPage() {
   const qc = useQueryClient();
-  const { isAdmin } = useAuth();
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [currentTags, setCurrentTags] = useState<TagSummary[]>([]);
@@ -195,7 +193,6 @@ export default function TaggingPage() {
           allTags={tagsQuery.data ?? []}
           appliedIds={appliedIds}
           onAdd={(name) => addMutation.mutate(name)}
-          isAdmin={isAdmin}
           inputRef={inputRef}
           placeholder="Add tags…"
         />

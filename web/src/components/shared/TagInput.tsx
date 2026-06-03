@@ -8,12 +8,11 @@ interface Props {
   allTags: TagResponse[];
   appliedIds: Set<string>;
   onAdd: (tagName: string) => void;
-  isAdmin: boolean;
   inputRef?: RefObject<HTMLInputElement>;
   placeholder?: string;
 }
 
-export default function TagInput({ allTags, appliedIds, onAdd, isAdmin, inputRef, placeholder = 'Add tags…' }: Props) {
+export default function TagInput({ allTags, appliedIds, onAdd, inputRef, placeholder = 'Add tags…' }: Props) {
   const localRef = useRef<HTMLInputElement>(null);
   const ref = inputRef ?? localRef;
 

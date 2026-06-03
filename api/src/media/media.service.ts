@@ -107,7 +107,7 @@ export class MediaService {
     uploaderId: string,
   ): Promise<string | null> {
     try {
-      const thumbBuffer = await sharp(buffer)
+      const thumbBuffer = await sharp(buffer, { pages: 1 })
         .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 80 })
         .toBuffer();
@@ -158,8 +158,9 @@ export class MediaService {
       ? await this.generateThumbnail(file.buffer, uploaderId)
       : null;
 
+    let media: Media;
     try {
-      const media = this.mediaRepo.create({
+      const entity = this.mediaRepo.create({
         uploaderId,
         objectKey,
         thumbnailKey: thumbnailKey ?? undefined,
@@ -168,7 +169,7 @@ export class MediaService {
         sizeBytes: file.size,
         contentHash,
       });
-      return await this.mediaRepo.save(media);
+      media = await this.mediaRepo.save(entity);
     } catch (err) {
       await this.minioService.removeObject(objectKey).catch(() => undefined);
       if (thumbnailKey) {
@@ -176,6 +177,37 @@ export class MediaService {
       }
       throw err;
     }
+
+    const autoTagNames = this.getAutoTagNames(mimeType, file.buffer);
+    if (autoTagNames.length > 0) {
+      try {
+        const tags = await Promise.all(
+          autoTagNames.map((name) => this.tagsService.findOrCreate(name, uploaderId)),
+        );
+        const placeholders = tags.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
+        const params = tags.flatMap((t) => [media.id, t.id]);
+        await this.mediaRepo.query(
+          `INSERT INTO media_tags (media_id, tag_id) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
+          params,
+        );
+      } catch (err) {
+        this.logger.warn(`Auto-tagging failed for ${media.id}: ${(err as Error).message}`);
+      }
+    }
+
+    return media;
+  }
+
+  private getAutoTagNames(mimeType: string, buffer: Buffer): string[] {
+    if (mimeType.startsWith('video/')) return ['video'];
+    if (mimeType === 'image/gif') return ['animated'];
+    if (mimeType === 'image/webp' && this.isAnimatedWebP(buffer)) return ['animated'];
+    return [];
+  }
+
+  private isAnimatedWebP(buffer: Buffer): boolean {
+    // Animated WebP files contain an 'ANIM' chunk in the RIFF container
+    return buffer.length > 12 && buffer.indexOf(Buffer.from('ANIM')) !== -1;
   }
 
   async browse(dto: BrowseMediaDto): Promise<PaginatedMediaResponseDto> {

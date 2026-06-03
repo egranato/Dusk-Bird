@@ -66,8 +66,8 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
         </div>
 
         {/* Sidebar */}
-        <div className="w-full md:w-72 p-5 flex flex-col gap-4 overflow-y-auto">
-          <div className="flex items-start justify-between gap-2">
+        <div className="w-full md:w-72 p-5 flex flex-col gap-4 min-h-0">
+          <div className="flex items-start justify-between gap-2 flex-shrink-0">
             <p className="text-xs text-zinc-500">
               {(currentItem.sizeBytes / 1024 / 1024).toFixed(1)} MB
             </p>
@@ -77,7 +77,7 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
           </div>
 
           {/* Tags */}
-          <div>
+          <div className="flex-1 overflow-y-auto min-h-0">
             <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Tags</p>
             <div className="flex flex-wrap gap-1.5 mb-2">
               {[...currentItem.tags].sort((a, b) => a.name.localeCompare(b.name)).map((tag) => (
@@ -120,12 +120,11 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
               allTags={allTags}
               appliedIds={new Set(currentItem.tags.map((t) => t.id))}
               onAdd={(name) => addTagMutation.mutate([name])}
-              isAdmin={isAdmin}
             />
           </div>
 
           {/* Actions */}
-          <div className="mt-auto flex flex-col gap-2">
+          <div className="flex-shrink-0 flex flex-col gap-2">
             <a
               href={src}
               download={currentItem.fileName}
