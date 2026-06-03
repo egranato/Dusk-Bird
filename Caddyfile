@@ -6,23 +6,22 @@
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ── Option A: HTTP-01 ACME (ports 80 + 443 open to internet) ─────────────────
-# Replace "api.yourdomain.com" with your actual domain.
 # Caddy obtains a Let's Encrypt certificate automatically.
 #
-# {
-#     email admin@yourdomain.com
-# }
-#
-# api.yourdomain.com {
-#     reverse_proxy api:3000
-#     header {
-#         -Server
-#         Strict-Transport-Security "max-age=31536000; includeSubDomains"
-#     }
-# }
-#
-# files.yourdomain.com {
-#     # MinIO web console — restrict to LAN only
+{
+    email kagenoikari@gmail.com
+}
+
+kylistran.tplinkdns.com {
+    reverse_proxy api:3000
+    header {
+        -Server
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+    }
+}
+
+# MinIO web console — uncomment if you need it, LAN access only
+# files.kylistran.tplinkdns.com {
 #     @blocked not remote_ip 192.168.0.0/16 10.0.0.0/8
 #     respond @blocked "Forbidden" 403
 #     reverse_proxy minio:9001
@@ -52,29 +51,27 @@
 # ── Option C: DNS-01 via Cloudflare (recommended for NAT/CGNAT) ──────────────
 # Requires a custom Caddy image — see caddy/Dockerfile.
 # Set CLOUDFLARE_API_TOKEN in your .env.
-# Replace domain names with your own.
 #
-{
-    email admin@yourdomain.com
-}
-
-api.yourdomain.com {
-    tls {
-        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
-    }
-    reverse_proxy api:3000
-    header {
-        -Server
-        Strict-Transport-Security "max-age=31536000; includeSubDomains"
-    }
-}
-
-files.yourdomain.com {
-    tls {
-        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
-    }
-    # MinIO web console — restrict to LAN only
-    @blocked not remote_ip 192.168.0.0/16 10.0.0.0/8
-    respond @blocked "Forbidden" 403
-    reverse_proxy minio:9001
-}
+# {
+#     email admin@yourdomain.com
+# }
+#
+# api.yourdomain.com {
+#     tls {
+#         dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+#     }
+#     reverse_proxy api:3000
+#     header {
+#         -Server
+#         Strict-Transport-Security "max-age=31536000; includeSubDomains"
+#     }
+# }
+#
+# files.yourdomain.com {
+#     tls {
+#         dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+#     }
+#     @blocked not remote_ip 192.168.0.0/16 10.0.0.0/8
+#     respond @blocked "Forbidden" 403
+#     reverse_proxy minio:9001
+# }
