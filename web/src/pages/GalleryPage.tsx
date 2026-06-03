@@ -20,6 +20,7 @@ export default function GalleryPage() {
   const [includedTags, setIncludedTags] = useState<string[]>([]);
   const [excludedTags, setExcludedTags] = useState<string[]>([]);
   const [filterMode, setFilterMode] = useState<'and' | 'or'>('and');
+  const [untaggedOnly, setUntaggedOnly] = useState(false);
   const [sort, setSort] = useState<'newest' | 'random'>('newest');
   const [page, setPage] = useState(1);
 
@@ -35,12 +36,13 @@ export default function GalleryPage() {
   const tagsQuery = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list });
 
   const mediaQuery = useQuery({
-    queryKey: ['media', includedTags, excludedTags, filterMode, sort, page],
+    queryKey: ['media', includedTags, excludedTags, filterMode, untaggedOnly, sort, page],
     queryFn: () =>
       mediaApi.browse({
-        tags: includedTags.length > 0 ? includedTags.join(',') : undefined,
-        excludeTags: excludedTags.length > 0 ? excludedTags.join(',') : undefined,
+        tags: !untaggedOnly && includedTags.length > 0 ? includedTags.join(',') : undefined,
+        excludeTags: !untaggedOnly && excludedTags.length > 0 ? excludedTags.join(',') : undefined,
         mode: filterMode === 'or' ? 'or' : undefined,
+        maxTags: untaggedOnly ? 0 : undefined,
         sort: sort === 'random' ? 'random' : undefined,
         page,
         limit: PAGE_SIZE,
@@ -122,6 +124,17 @@ export default function GalleryPage() {
           onClear={clearTags}
           onModeChange={setFilterMode}
         />
+
+        <button
+          onClick={() => { setUntaggedOnly((v) => !v); setPage(1); }}
+          className={`text-sm rounded-full px-3 py-1 border transition-colors ${
+            untaggedOnly
+              ? 'bg-brand border-brand text-white'
+              : 'border-zinc-600 text-zinc-400 hover:border-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          Untagged
+        </button>
 
         <div className="ml-auto flex items-center gap-2">
           {!selectionMode && (includedTags.length > 0 || excludedTags.length > 0 || (mediaQuery.data?.total ?? 0) > 0) && (

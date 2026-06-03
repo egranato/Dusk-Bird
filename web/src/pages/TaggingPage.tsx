@@ -83,6 +83,14 @@ export default function TaggingPage() {
     },
   });
 
+  const deleteMutation = useMutation({
+    mutationFn: () => mediaApi.remove(item!.id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['tagging-queue-count'] });
+      advance();
+    },
+  });
+
   function advance() {
     const nextIndex = index + 1;
     if (nextIndex >= items.length) {
@@ -95,7 +103,7 @@ export default function TaggingPage() {
   }
 
   const isVideo = item?.mimeType.startsWith('video/');
-  const mutating = addMutation.isPending || removeMutation.isPending;
+  const mutating = addMutation.isPending || removeMutation.isPending || deleteMutation.isPending;
   const appliedIds = new Set(currentTags.map((t) => t.id));
 
   const quickAdd = (tagsQuery.data ?? [])
@@ -199,12 +207,21 @@ export default function TaggingPage() {
 
         {/* Navigation */}
         <div className="flex justify-between pt-2">
-          <button
-            onClick={advance}
-            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
-          >
-            Skip →
-          </button>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={advance}
+              className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+            >
+              Skip →
+            </button>
+            <button
+              onClick={() => { if (confirm('Delete this item permanently?')) deleteMutation.mutate(); }}
+              disabled={mutating}
+              className="text-sm text-red-500 hover:text-red-400 disabled:opacity-40 transition-colors"
+            >
+              Delete
+            </button>
+          </div>
           <button
             onClick={advance}
             disabled={currentTags.length === 0}

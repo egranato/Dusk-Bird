@@ -20,11 +20,11 @@ export default function MediaCard({ item, onClick, selectable, selected }: Props
     >
       {isVideo ? (
         <>
-          <video
-            src={mediaDownloadUrl(item.id)}
+          <img
+            src={mediaThumbnailUrl(item.id)}
+            alt=""
             className="w-full h-auto sm:h-full sm:object-cover"
-            preload="metadata"
-            muted
+            loading="lazy"
           />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
             <div className="bg-black/50 rounded-full w-10 h-10 flex items-center justify-center">

@@ -4,7 +4,7 @@ COPY package*.json ./
 
 # ── Development ───────────────────────────────────────────────────────────────
 FROM base AS development
-RUN npm ci
+RUN apk add --no-cache ffmpeg && npm ci
 COPY . .
 EXPOSE 3000
 CMD ["npm", "run", "start:dev"]
@@ -19,6 +19,7 @@ RUN npm run build
 FROM node:22-alpine AS production
 WORKDIR /app
 ENV NODE_ENV=production
+RUN apk add --no-cache ffmpeg
 
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/node_modules ./node_modules

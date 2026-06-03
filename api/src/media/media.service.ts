@@ -8,11 +8,17 @@ import {
   UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+import { writeFile, readFile, unlink } from 'fs/promises';
+import { tmpdir } from 'os';
+import { extname, join } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
 import { In, Not, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
-import { extname } from 'path';
 import * as archiver from 'archiver';
+
+const execFileAsync = promisify(execFile);
 import { Response } from 'express';
 import sharp from 'sharp';
 import { Media } from './entities/media.entity';
@@ -127,6 +133,44 @@ export class MediaService {
     }
   }
 
+  private async generateVideoThumbnail(
+    buffer: Buffer,
+    mimeType: string,
+    uploaderId: string,
+  ): Promise<string | null> {
+    const ext = mimeType.split('/')[1] ?? 'mp4';
+    const inputPath = join(tmpdir(), `${uuidv4()}.${ext}`);
+    const outputPath = join(tmpdir(), `${uuidv4()}_thumb.jpg`);
+    try {
+      await writeFile(inputPath, buffer);
+      await execFileAsync('ffmpeg', [
+        '-ss', '1',
+        '-i', inputPath,
+        '-frames:v', '1',
+        '-vf', 'scale=800:800:force_original_aspect_ratio=decrease',
+        '-y', outputPath,
+      ]);
+      const thumbBuffer = await readFile(outputPath);
+      const thumbnailKey = `thumbnails/${uploaderId}/${uuidv4()}_thumb.jpg`;
+      const { Readable } = await import('stream');
+      await this.minioService.putObject(
+        thumbnailKey,
+        Readable.from(thumbBuffer),
+        thumbBuffer.length,
+        'image/jpeg',
+      );
+      return thumbnailKey;
+    } catch (err) {
+      this.logger.warn(`Video thumbnail generation failed: ${(err as Error).message}`);
+      return null;
+    } finally {
+      await Promise.all([
+        unlink(inputPath).catch(() => undefined),
+        unlink(outputPath).catch(() => undefined),
+      ]);
+    }
+  }
+
   async upload(file: Express.Multer.File, uploaderId: string): Promise<Media> {
     const mimeType = file.mimetype;
     if (!ALLOWED_MIME_PREFIXES.some((p) => mimeType.startsWith(p))) {
@@ -156,7 +200,9 @@ export class MediaService {
 
     const thumbnailKey = mimeType.startsWith('image/')
       ? await this.generateThumbnail(file.buffer, uploaderId)
-      : null;
+      : mimeType.startsWith('video/')
+        ? await this.generateVideoThumbnail(file.buffer, mimeType, uploaderId)
+        : null;
 
     let media: Media;
     try {
