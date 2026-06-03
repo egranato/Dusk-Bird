@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import axios from 'axios';
 
 const schema = z.object({
-  email: z.string().email('Invalid email'),
+  username: z.string().min(1, 'Required'),
   password: z.string().min(1, 'Required'),
 });
 
@@ -25,12 +25,12 @@ export default function LoginPage() {
 
   async function onSubmit(values: FormValues) {
     try {
-      await login(values.email, values.password);
+      await login(values.username, values.password);
       navigate('/', { replace: true });
     } catch (err) {
       const message =
         axios.isAxiosError(err) && err.response?.status === 401
-          ? 'Invalid email or password'
+          ? 'Invalid username or password'
           : 'Something went wrong';
       setError('root', { message });
     }
@@ -44,15 +44,15 @@ export default function LoginPage() {
 
         <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
           <div>
-            <label className="block text-sm text-zinc-300 mb-1">Email</label>
+            <label className="block text-sm text-zinc-300 mb-1">Username</label>
             <input
-              {...register('email')}
-              type="email"
-              autoComplete="email"
+              {...register('username')}
+              type="text"
+              autoComplete="username"
               className="w-full bg-surface-2 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
             />
-            {errors.email && (
-              <p className="text-red-400 text-xs mt-1">{errors.email.message}</p>
+            {errors.username && (
+              <p className="text-red-400 text-xs mt-1">{errors.username.message}</p>
             )}
           </div>
 

@@ -2,6 +2,8 @@ import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import * as mediaApi from '../../api/media';
+import { useAuth } from '../../contexts/AuthContext';
+import TagInput from '../shared/TagInput';
 import type { TagResponse } from '../../types/api';
 
 interface Props {
@@ -22,11 +24,10 @@ function filterMediaFiles(fileList: FileList | File[]): File[] {
 
 export default function UploadModal({ tags, onClose }: Props) {
   const qc = useQueryClient();
+  const { isAdmin } = useAuth();
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
-  const [tagInput, setTagInput] = useState('');
-  const [suggestions, setSuggestions] = useState<TagResponse[]>([]);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [error, setError] = useState('');
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
@@ -41,10 +42,7 @@ export default function UploadModal({ tags, onClose }: Props) {
 
   const mutation = useMutation<UploadResult>({
     mutationFn: async () => {
-      const tagNames = [
-        ...selectedTags,
-        ...tagInput.split(',').map((s) => s.trim()).filter(Boolean),
-      ];
+      const tagNames = selectedTags;
       let uploaded = 0;
       let duplicates = 0;
 
@@ -84,24 +82,6 @@ export default function UploadModal({ tags, onClose }: Props) {
       setError('Upload failed — check file type (images and videos only)');
     },
   });
-
-  function handleTagInput(value: string) {
-    setTagInput(value);
-    const last = value.split(',').pop()?.trim() ?? '';
-    if (last.length > 0) {
-      setSuggestions(tags.filter((t) => t.name.toLowerCase().includes(last.toLowerCase())).slice(0, 5));
-    } else {
-      setSuggestions([]);
-    }
-  }
-
-  function pickSuggestion(name: string) {
-    setSelectedTags((prev) => (prev.includes(name) ? prev : [...prev, name]));
-    const parts = tagInput.split(',');
-    parts.pop();
-    setTagInput(parts.join(', '));
-    setSuggestions([]);
-  }
 
   function removeSelectedTag(name: string) {
     setSelectedTags((prev) => prev.filter((t) => t !== name));
@@ -159,28 +139,13 @@ export default function UploadModal({ tags, onClose }: Props) {
               ))}
             </div>
           )}
-          <div className="relative">
-            <input
-              value={tagInput}
-              onChange={(e) => handleTagInput(e.target.value)}
-              placeholder="e.g. Beach, Summer 2024"
-              className="w-full bg-surface-2 rounded-lg px-3 py-2 text-sm outline-none focus:ring-2 focus:ring-brand"
-            />
-            {suggestions.length > 0 && (
-              <ul className="absolute top-full left-0 right-0 mt-1 bg-surface-2 border border-zinc-700 rounded-lg overflow-hidden z-10">
-                {suggestions.map((s) => (
-                  <li key={s.id}>
-                    <button
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-surface-3 transition-colors"
-                      onClick={() => pickSuggestion(s.name)}
-                    >
-                      {s.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+          <TagInput
+            allTags={tags}
+            appliedIds={new Set(selectedTags.map(n => tags.find(t => t.name === n)?.id ?? ''))}
+            onAdd={(name) => setSelectedTags((prev) => prev.includes(name) ? prev : [...prev, name])}
+            isAdmin={isAdmin}
+            placeholder="Search tags…"
+          />
         </div>
 
         {error && <p className="text-red-400 text-sm mb-3">{error}</p>}

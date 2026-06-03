@@ -3,20 +3,32 @@ import { Transform } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
 
 export class BrowseMediaDto {
-  @ApiPropertyOptional({ description: 'Comma-separated tag slugs', example: 'beach,summer' })
+  @ApiPropertyOptional({ description: 'Comma-separated tag slugs to include', example: 'beach,summer' })
   @IsOptional()
   @IsString()
   tags?: string;
+
+  @ApiPropertyOptional({ description: 'Comma-separated tag slugs to exclude', example: 'draft,wip' })
+  @IsOptional()
+  @IsString()
+  excludeTags?: string;
 
   @ApiPropertyOptional({ enum: ['and', 'or'], default: 'and' })
   @IsOptional()
   @IsIn(['and', 'or'])
   mode?: 'and' | 'or';
 
-  @ApiPropertyOptional({ enum: ['newest', 'random'], default: 'newest' })
+  @ApiPropertyOptional({ enum: ['newest', 'oldest', 'random'], default: 'newest' })
   @IsOptional()
-  @IsIn(['newest', 'random'])
-  sort?: 'newest' | 'random';
+  @IsIn(['newest', 'oldest', 'random'])
+  sort?: 'newest' | 'oldest' | 'random';
+
+  @ApiPropertyOptional({ description: 'Only return items with this many tags or fewer', example: 2 })
+  @IsOptional()
+  @Transform(({ value }) => parseInt(value as string, 10))
+  @IsInt()
+  @Min(0)
+  maxTags?: number;
 
   @ApiPropertyOptional({ default: 1 })
   @IsOptional()

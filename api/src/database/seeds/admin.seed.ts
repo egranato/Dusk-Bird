@@ -9,21 +9,21 @@ dotenv.config({ path: join(__dirname, '../../../..', '.env') });
 async function seed() {
   await AppDataSource.initialize();
 
-  const email = process.env.ADMIN_EMAIL;
+  const username = process.env.ADMIN_USERNAME;
   const password = process.env.ADMIN_INITIAL_PASSWORD;
 
-  if (!email || !password) {
-    console.error('ADMIN_EMAIL and ADMIN_INITIAL_PASSWORD must be set in .env');
+  if (!username || !password) {
+    console.error('ADMIN_USERNAME and ADMIN_INITIAL_PASSWORD must be set in .env');
     process.exit(1);
   }
 
   const existing = await AppDataSource.query(
-    `SELECT id FROM users WHERE email = $1`,
-    [email],
+    `SELECT id FROM users WHERE username = $1`,
+    [username],
   );
 
   if (existing.length > 0) {
-    console.log(`Admin user ${email} already exists — skipping.`);
+    console.log(`Admin user "${username}" already exists — skipping.`);
     await AppDataSource.destroy();
     return;
   }
@@ -31,12 +31,12 @@ async function seed() {
   const passwordHash = await argon2.hash(password);
 
   await AppDataSource.query(
-    `INSERT INTO users (email, display_name, password_hash, role)
+    `INSERT INTO users (username, display_name, password_hash, role)
      VALUES ($1, 'Admin', $2, 'admin')`,
-    [email, passwordHash],
+    [username, passwordHash],
   );
 
-  console.log(`Admin user ${email} created successfully.`);
+  console.log(`Admin user "${username}" created successfully.`);
   await AppDataSource.destroy();
 }
 

@@ -6,7 +6,7 @@ interface AuthContextValue {
   currentUser: UserSummary | null;
   token: string | null;
   isAdmin: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -28,8 +28,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [token, setToken] = useState<string | null>(initial.token);
   const [currentUser, setCurrentUser] = useState<UserSummary | null>(initial.user);
 
-  const login = useCallback(async (email: string, password: string) => {
-    const res = await authApi.login(email, password);
+  const login = useCallback(async (username: string, password: string) => {
+    const res = await authApi.login(username, password);
     localStorage.setItem('token', res.accessToken);
     localStorage.setItem('user', JSON.stringify(res.user));
     setToken(res.accessToken);

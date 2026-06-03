@@ -1,12 +1,61 @@
 import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
 import * as usersApi from '../../api/users';
 import CreateUserModal from './CreateUserModal';
 import type { User } from '../../types/api';
 
+const passwordSchema = z.object({
+  password: z.string().min(8, 'Minimum 8 characters'),
+});
+type PasswordForm = z.infer<typeof passwordSchema>;
+
+function ResetPasswordRow({ user, onDone }: { user: User; onDone: () => void }) {
+  const qc = useQueryClient();
+  const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<PasswordForm>({
+    resolver: zodResolver(passwordSchema),
+  });
+
+  const mutation = useMutation({
+    mutationFn: (values: PasswordForm) => usersApi.update(user.id, { password: values.password }),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['users'] }); onDone(); },
+  });
+
+  return (
+    <tr className="border-b border-zinc-800/50 bg-surface-2/30">
+      <td colSpan={5} className="px-4 py-3">
+        <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex items-center gap-2">
+          <span className="text-xs text-zinc-400 mr-1">New password for {user.displayName}:</span>
+          <input
+            {...register('password')}
+            type="password"
+            autoFocus
+            placeholder="Min. 8 characters"
+            className="bg-surface-2 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand w-48"
+          />
+          {errors.password && <span className="text-red-400 text-xs">{errors.password.message}</span>}
+          <button
+            type="submit"
+            disabled={isSubmitting || mutation.isPending}
+            className="bg-brand hover:bg-brand-hover disabled:opacity-50 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors"
+          >
+            {mutation.isPending ? 'Saving…' : 'Save'}
+          </button>
+          <button type="button" onClick={onDone} className="text-xs text-zinc-500 hover:text-zinc-300 transition-colors">
+            Cancel
+          </button>
+        </form>
+      </td>
+    </tr>
+  );
+}
+
 export default function UserList() {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
+  const [resettingId, setResettingId] = useState<string | null>(null);
 
   const { data: users = [], isLoading } = useQuery({
     queryKey: ['users'],
@@ -42,7 +91,7 @@ export default function UserList() {
           <thead>
             <tr className="border-b border-zinc-800 text-left text-zinc-500 text-xs uppercase tracking-wider">
               <th className="px-4 py-3">Name</th>
-              <th className="px-4 py-3">Email</th>
+              <th className="px-4 py-3">Username</th>
               <th className="px-4 py-3">Role</th>
               <th className="px-4 py-3">Status</th>
               <th className="px-4 py-3"></th>
@@ -50,38 +99,49 @@ export default function UserList() {
           </thead>
           <tbody>
             {users.map((user) => (
-              <tr key={user.id} className="border-b border-zinc-800/50 last:border-0">
-                <td className="px-4 py-3">{user.displayName}</td>
-                <td className="px-4 py-3 text-zinc-400">{user.email}</td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${
-                    user.role === 'admin' ? 'bg-brand/20 text-brand' : 'bg-surface-2 text-zinc-400'
-                  }`}>
-                    {user.role}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <span className={`text-xs ${user.isActive ? 'text-green-400' : 'text-zinc-500'}`}>
-                    {user.isActive ? 'Active' : 'Inactive'}
-                  </span>
-                </td>
-                <td className="px-4 py-3">
-                  <div className="flex gap-3 justify-end">
-                    <button
-                      onClick={() => toggleActive.mutate(user)}
-                      className="text-xs text-zinc-400 hover:text-zinc-100 transition-colors"
-                    >
-                      {user.isActive ? 'Deactivate' : 'Activate'}
-                    </button>
-                    <button
-                      onClick={() => { if (confirm(`Delete ${user.displayName}?`)) deleteUser.mutate(user.id); }}
-                      className="text-xs text-red-400 hover:text-red-300 transition-colors"
-                    >
-                      Delete
-                    </button>
-                  </div>
-                </td>
-              </tr>
+              <>
+                <tr key={user.id} className="border-b border-zinc-800/50 last:border-0">
+                  <td className="px-4 py-3">{user.displayName}</td>
+                  <td className="px-4 py-3 text-zinc-400 font-mono text-xs">{user.username}</td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs px-2 py-0.5 rounded-full ${
+                      user.role === 'admin' ? 'bg-brand/20 text-brand' : 'bg-surface-2 text-zinc-400'
+                    }`}>
+                      {user.role}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span className={`text-xs ${user.isActive ? 'text-green-400' : 'text-zinc-500'}`}>
+                      {user.isActive ? 'Active' : 'Inactive'}
+                    </span>
+                  </td>
+                  <td className="px-4 py-3">
+                    <div className="flex gap-3 justify-end">
+                      <button
+                        onClick={() => setResettingId(resettingId === user.id ? null : user.id)}
+                        className="text-xs text-zinc-400 hover:text-zinc-100 transition-colors"
+                      >
+                        Reset password
+                      </button>
+                      <button
+                        onClick={() => toggleActive.mutate(user)}
+                        className="text-xs text-zinc-400 hover:text-zinc-100 transition-colors"
+                      >
+                        {user.isActive ? 'Deactivate' : 'Activate'}
+                      </button>
+                      <button
+                        onClick={() => { if (confirm(`Delete ${user.displayName}?`)) deleteUser.mutate(user.id); }}
+                        className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                      >
+                        Delete
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+                {resettingId === user.id && (
+                  <ResetPasswordRow key={`reset-${user.id}`} user={user} onDone={() => setResettingId(null)} />
+                )}
+              </>
             ))}
           </tbody>
         </table>

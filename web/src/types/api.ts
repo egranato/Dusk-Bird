@@ -2,7 +2,7 @@ export type Role = 'admin' | 'user';
 
 export interface UserSummary {
   id: string;
-  email: string;
+  username: string;
   displayName: string;
   role: Role;
 }
@@ -14,7 +14,7 @@ export interface AuthResponse {
 
 export interface User {
   id: string;
-  email: string;
+  username: string;
   displayName: string;
   role: Role;
   isActive: boolean;

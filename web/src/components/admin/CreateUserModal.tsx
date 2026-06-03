@@ -5,7 +5,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as usersApi from '../../api/users';
 
 const schema = z.object({
-  email: z.string().email('Invalid email'),
+  username: z.string().min(1).max(100),
   displayName: z.string().min(1).max(100),
   password: z.string().min(8, 'Minimum 8 characters'),
   role: z.enum(['admin', 'user']),
@@ -35,7 +35,7 @@ export default function CreateUserModal({ onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['users'] });
       onClose();
     },
-    onError: () => setError('root', { message: 'Failed to create user' }),
+    onError: () => setError('root', { message: 'Failed to create user — username may already be taken' }),
   });
 
   return (
@@ -45,8 +45,8 @@ export default function CreateUserModal({ onClose }: Props) {
 
         <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="space-y-3">
           {[
+            { name: 'username' as const, label: 'Username', type: 'text' },
             { name: 'displayName' as const, label: 'Display name', type: 'text' },
-            { name: 'email' as const, label: 'Email', type: 'email' },
             { name: 'password' as const, label: 'Password', type: 'password' },
           ].map(({ name, label, type }) => (
             <div key={name}>

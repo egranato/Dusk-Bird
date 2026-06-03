@@ -1,10 +1,19 @@
 import type { ReactNode } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../../contexts/AuthContext';
+import * as mediaApi from '../../api/media';
 
 export default function AppLayout({ children }: { children: ReactNode }) {
   const { currentUser, isAdmin, logout } = useAuth();
   const { pathname } = useLocation();
+
+  const queueQuery = useQuery({
+    queryKey: ['tagging-queue-count'],
+    queryFn: () => mediaApi.browse({ maxTags: 2, limit: 1 }),
+    staleTime: 30_000,
+  });
+  const queueCount = queueQuery.data?.total ?? 0;
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -22,6 +31,21 @@ export default function AppLayout({ children }: { children: ReactNode }) {
           >
             Gallery
           </Link>
+
+          <Link
+            to="/tagging"
+            className={`relative text-sm transition-colors ${
+              pathname === '/tagging' ? 'text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            Tag Queue
+            {queueCount > 0 && (
+              <span className="absolute -top-1.5 -right-4 bg-brand text-white text-xs font-bold rounded-full min-w-[1.1rem] h-[1.1rem] flex items-center justify-center px-1 leading-none">
+                {queueCount > 99 ? '99+' : queueCount}
+              </span>
+            )}
+          </Link>
+
           {isAdmin && (
             <Link
               to="/admin"

@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as mediaApi from '../../api/media';
+import { useAuth } from '../../contexts/AuthContext';
+import TagInput from '../shared/TagInput';
 import type { MediaItem, TagResponse } from '../../types/api';
 
 interface Props {
@@ -11,54 +13,60 @@ interface Props {
 
 export default function BulkTagModal({ selectedItems, allTags, onClose }: Props) {
   const qc = useQueryClient();
-  const [tagInput, setTagInput] = useState('');
-  const [suggestions, setSuggestions] = useState<TagResponse[]>([]);
+  const { isAdmin } = useAuth();
 
-  // Tags present on at least one selected item, with a count of how many items have them.
+  // Staged changes — nothing hits the API until Done is clicked.
+  const [toAdd, setToAdd] = useState<string[]>([]);            // tag names
+  const [toRemove, setToRemove] = useState<Set<string>>(new Set()); // tag IDs
+
   const tagCounts = new Map<string, { tag: TagResponse; count: number }>();
   for (const item of selectedItems) {
     for (const t of item.tags) {
-      const entry = tagCounts.get(t.id);
       const full = allTags.find((at) => at.id === t.id);
       if (!full) continue;
+      const entry = tagCounts.get(t.id);
       tagCounts.set(t.id, { tag: full, count: (entry?.count ?? 0) + 1 });
     }
   }
   const presentTags = [...tagCounts.values()].sort((a, b) => a.tag.name.localeCompare(b.tag.name));
-
   const selectedIds = selectedItems.map((i) => i.id);
 
-  const addMutation = useMutation({
-    mutationFn: (names: string[]) => mediaApi.bulkAddTags(selectedIds, names),
+  const applyMutation = useMutation({
+    mutationFn: async () => {
+      if (toAdd.length > 0) await mediaApi.bulkAddTags(selectedIds, toAdd);
+      for (const tagId of toRemove) {
+        await mediaApi.bulkRemoveTag(selectedIds, tagId);
+      }
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['media'] });
       qc.invalidateQueries({ queryKey: ['tags'] });
-      setTagInput('');
+      onClose();
     },
   });
 
-  const removeMutation = useMutation({
-    mutationFn: (tagId: string) => mediaApi.bulkRemoveTag(selectedIds, tagId),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['media'] });
-      qc.invalidateQueries({ queryKey: ['tags'] });
-    },
-  });
+  const hasChanges = toAdd.length > 0 || toRemove.size > 0;
 
-  function handleInput(value: string) {
-    setTagInput(value);
-    const last = value.split(',').pop()?.trim() ?? '';
-    setSuggestions(
-      last.length > 0
-        ? allTags.filter((t) => t.name.toLowerCase().includes(last.toLowerCase())).slice(0, 5)
-        : [],
-    );
+  function stageAdd(name: string) {
+    if (!toAdd.includes(name)) setToAdd((prev) => [...prev, name]);
   }
 
-  function submitAdd() {
-    const names = tagInput.split(',').map((s) => s.trim()).filter(Boolean);
-    if (names.length > 0) addMutation.mutate(names);
+  function unstageAdd(name: string) {
+    setToAdd((prev) => prev.filter((n) => n !== name));
   }
+
+  function toggleRemove(tagId: string) {
+    setToRemove((prev) => {
+      const next = new Set(prev);
+      next.has(tagId) ? next.delete(tagId) : next.add(tagId);
+      return next;
+    });
+  }
+
+  // Tags already staged to add shouldn't appear in the remove list or input.
+  const stagedAddIds = new Set(
+    toAdd.map((name) => allTags.find((t) => t.name === name)?.id ?? ''),
+  );
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
@@ -68,68 +76,74 @@ export default function BulkTagModal({ selectedItems, allTags, onClose }: Props)
           <span className="text-xs text-zinc-500">{selectedItems.length} items</span>
         </div>
 
-        {/* Add tags */}
+        {/* Add section */}
         <div className="mb-5">
           <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Add to all selected</p>
-          <div className="relative flex gap-1.5">
-            <input
-              value={tagInput}
-              onChange={(e) => handleInput(e.target.value)}
-              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); submitAdd(); } }}
-              placeholder="Tag name…"
-              className="flex-1 bg-surface-2 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand"
-            />
-            <button
-              onClick={submitAdd}
-              disabled={!tagInput.trim() || addMutation.isPending}
-              className="bg-brand hover:bg-brand-hover disabled:opacity-40 rounded-lg px-3 py-1.5 text-sm font-medium transition-colors"
-            >
-              {addMutation.isPending ? '…' : 'Add'}
-            </button>
-            {suggestions.length > 0 && (
-              <ul className="absolute top-full left-0 right-12 mt-1 bg-surface-2 border border-zinc-700 rounded-lg overflow-hidden z-10">
-                {suggestions.map((s) => (
-                  <li key={s.id}>
-                    <button
-                      className="w-full text-left px-3 py-2 text-sm hover:bg-surface-3 transition-colors"
-                      onClick={() => { addMutation.mutate([s.name]); setTagInput(''); setSuggestions([]); }}
-                    >
-                      {s.name}
-                    </button>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
+
+          {toAdd.length > 0 && (
+            <div className="flex flex-wrap gap-1.5 mb-2">
+              {toAdd.map((name) => (
+                <span key={name} className="flex items-center gap-1 bg-brand/20 text-brand rounded-full text-xs px-2.5 py-1">
+                  {name}
+                  <button onClick={() => unstageAdd(name)} className="hover:text-white transition-colors">×</button>
+                </span>
+              ))}
+            </div>
+          )}
+
+          <TagInput
+            allTags={allTags}
+            appliedIds={stagedAddIds}
+            onAdd={stageAdd}
+            isAdmin={isAdmin}
+            placeholder="Tag name…"
+          />
         </div>
 
-        {/* Remove tags */}
+        {/* Remove section */}
         {presentTags.length > 0 && (
-          <div>
-            <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">Remove from selected</p>
+          <div className="mb-5">
+            <p className="text-xs text-zinc-500 uppercase tracking-wider mb-2">
+              Remove from selected — click to mark
+            </p>
             <div className="flex flex-wrap gap-1.5">
-              {presentTags.map(({ tag, count }) => (
-                <button
-                  key={tag.id}
-                  onClick={() => removeMutation.mutate(tag.id)}
-                  disabled={removeMutation.isPending}
-                  className="flex items-center gap-1 bg-surface-2 hover:bg-red-500/20 hover:border-red-500/50 border border-transparent rounded-full text-xs px-2.5 py-1 transition-colors disabled:opacity-50"
-                >
-                  {tag.name}
-                  {count < selectedItems.length && (
-                    <span className="text-zinc-500">({count})</span>
-                  )}
-                  <span className="text-zinc-500 hover:text-red-400">×</span>
-                </button>
-              ))}
+              {presentTags.map(({ tag, count }) => {
+                const marked = toRemove.has(tag.id);
+                return (
+                  <button
+                    key={tag.id}
+                    onClick={() => toggleRemove(tag.id)}
+                    className={`flex items-center gap-1 rounded-full text-xs px-2.5 py-1 border transition-colors ${
+                      marked
+                        ? 'bg-red-500/20 border-red-500/50 text-red-400 line-through'
+                        : 'bg-surface-2 border-transparent text-zinc-300 hover:border-red-500/40 hover:text-red-400'
+                    }`}
+                  >
+                    {tag.name}
+                    {count < selectedItems.length && (
+                      <span className="opacity-60 no-underline">({count})</span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
             <p className="text-xs text-zinc-600 mt-2">Numbers in brackets = not on all selected items</p>
           </div>
         )}
 
-        <div className="flex justify-end mt-5">
-          <button onClick={onClose} className="text-sm text-zinc-400 hover:text-zinc-100 transition-colors">
-            Done
+        <div className="flex justify-between items-center mt-2">
+          <button
+            onClick={onClose}
+            className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => hasChanges ? applyMutation.mutate() : onClose()}
+            disabled={applyMutation.isPending}
+            className="bg-brand hover:bg-brand-hover disabled:opacity-50 rounded-xl px-5 py-2 text-sm font-medium transition-colors"
+          >
+            {applyMutation.isPending ? 'Applying…' : hasChanges ? 'Apply & Done' : 'Done'}
           </button>
         </div>
       </div>

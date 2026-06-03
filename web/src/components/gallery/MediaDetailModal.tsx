@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import * as mediaApi from '../../api/media';
 import { useAuth } from '../../contexts/AuthContext';
+import TagInput from '../shared/TagInput';
 import type { MediaItem, TagResponse } from '../../types/api';
 
 interface Props {
@@ -14,8 +15,6 @@ interface Props {
 export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: Props) {
   const { currentUser, isAdmin } = useAuth();
   const qc = useQueryClient();
-  const [tagInput, setTagInput] = useState('');
-  const [suggestions, setSuggestions] = useState<TagResponse[]>([]);
   const [currentItem, setCurrentItem] = useState({ ...item, tags: item.tags ?? [] });
 
   const isVideo = currentItem.mimeType.startsWith('video/');
@@ -27,8 +26,6 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
       setCurrentItem({ ...updated, tags: updated.tags ?? [] });
       qc.invalidateQueries({ queryKey: ['media'] });
       qc.invalidateQueries({ queryKey: ['tags'] });
-      setTagInput('');
-      setSuggestions([]);
     },
   });
 
@@ -47,25 +44,6 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
       onDeleted();
     },
   });
-
-  function handleTagInput(value: string) {
-    setTagInput(value);
-    if (value.trim().length > 0) {
-      setSuggestions(
-        allTags
-          .filter((t) => t.name.toLowerCase().includes(value.toLowerCase()))
-          .filter((t) => !currentItem.tags.some((ct) => ct.id === t.id))
-          .slice(0, 5),
-      );
-    } else {
-      setSuggestions([]);
-    }
-  }
-
-  function submitTag() {
-    const names = tagInput.split(',').map((s) => s.trim()).filter(Boolean);
-    if (names.length > 0) addTagMutation.mutate(names);
-  }
 
   const canDelete = isAdmin || currentItem.uploaderId === currentUser?.id;
 
@@ -138,40 +116,12 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
               ) : null;
             })()}
 
-            <div className="relative">
-              <div className="flex gap-1.5">
-                <input
-                  value={tagInput}
-                  onChange={(e) => handleTagInput(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') { e.preventDefault(); submitTag(); }
-                  }}
-                  placeholder="Add tags…"
-                  className="flex-1 bg-surface-2 rounded-lg px-3 py-1.5 text-xs outline-none focus:ring-2 focus:ring-brand"
-                />
-                <button
-                  onClick={submitTag}
-                  disabled={!tagInput.trim() || addTagMutation.isPending}
-                  className="bg-brand hover:bg-brand-hover disabled:opacity-40 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors flex-shrink-0"
-                >
-                  Add
-                </button>
-              </div>
-              {suggestions.length > 0 && (
-                <ul className="absolute top-full left-0 right-0 mt-1 bg-surface-2 border border-zinc-700 rounded-lg overflow-hidden z-10">
-                  {suggestions.map((s) => (
-                    <li key={s.id}>
-                      <button
-                        className="w-full text-left px-3 py-1.5 text-xs hover:bg-surface-3 transition-colors"
-                        onClick={() => { addTagMutation.mutate([s.name]); setTagInput(''); setSuggestions([]); }}
-                      >
-                        {s.name}
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+            <TagInput
+              allTags={allTags}
+              appliedIds={new Set(currentItem.tags.map((t) => t.id))}
+              onAdd={(name) => addTagMutation.mutate([name])}
+              isAdmin={isAdmin}
+            />
           </div>
 
           {/* Actions */}

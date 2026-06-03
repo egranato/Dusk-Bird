@@ -95,7 +95,7 @@ export class MediaController {
     @Body() dto: AddTagsDto,
     @CurrentUser() user: JwtPayload,
   ): Promise<Media> {
-    return this.mediaService.addTags(id, dto.tagNames, user.sub);
+    return this.mediaService.addTags(id, dto.tagNames, user.sub, user.role === 'admin');
   }
 
   @Delete(':id/tags/:tagId')

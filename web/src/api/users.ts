@@ -7,7 +7,7 @@ export async function list(): Promise<User[]> {
 }
 
 export async function create(payload: {
-  email: string;
+  username: string;
   displayName: string;
   password: string;
   role?: 'admin' | 'user';

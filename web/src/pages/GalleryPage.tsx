@@ -17,7 +17,8 @@ export default function GalleryPage() {
   const qc = useQueryClient();
 
   // Filter state
-  const [activeTags, setActiveTags] = useState<string[]>([]);
+  const [includedTags, setIncludedTags] = useState<string[]>([]);
+  const [excludedTags, setExcludedTags] = useState<string[]>([]);
   const [filterMode, setFilterMode] = useState<'and' | 'or'>('and');
   const [sort, setSort] = useState<'newest' | 'random'>('newest');
   const [page, setPage] = useState(1);
@@ -34,10 +35,11 @@ export default function GalleryPage() {
   const tagsQuery = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list });
 
   const mediaQuery = useQuery({
-    queryKey: ['media', activeTags, filterMode, sort, page],
+    queryKey: ['media', includedTags, excludedTags, filterMode, sort, page],
     queryFn: () =>
       mediaApi.browse({
-        tags: activeTags.length > 0 ? activeTags.join(',') : undefined,
+        tags: includedTags.length > 0 ? includedTags.join(',') : undefined,
+        excludeTags: excludedTags.length > 0 ? excludedTags.join(',') : undefined,
         mode: filterMode === 'or' ? 'or' : undefined,
         sort: sort === 'random' ? 'random' : undefined,
         page,
@@ -48,16 +50,22 @@ export default function GalleryPage() {
   const allItems = mediaQuery.data?.data ?? [];
 
   // ── Tag filter ──────────────────────────────────────────────────────────────
-  function toggleTag(slug: string) {
+  function cycleTag(slug: string) {
     setPage(1);
-    setActiveTags((prev) =>
-      prev.includes(slug) ? prev.filter((s) => s !== slug) : [...prev, slug],
-    );
+    if (includedTags.includes(slug)) {
+      setIncludedTags((prev) => prev.filter((s) => s !== slug));
+      setExcludedTags((prev) => [...prev, slug]);
+    } else if (excludedTags.includes(slug)) {
+      setExcludedTags((prev) => prev.filter((s) => s !== slug));
+    } else {
+      setIncludedTags((prev) => [...prev, slug]);
+    }
   }
 
   function clearTags() {
     setPage(1);
-    setActiveTags([]);
+    setIncludedTags([]);
+    setExcludedTags([]);
   }
 
   // ── Selection ───────────────────────────────────────────────────────────────
@@ -107,18 +115,19 @@ export default function GalleryPage() {
       <div className="flex items-center gap-3 mb-4 flex-wrap">
         <TagFilterBar
           tags={tagsQuery.data ?? []}
-          activeSlugs={activeTags}
+          includedSlugs={includedTags}
+          excludedSlugs={excludedTags}
           mode={filterMode}
-          onToggle={toggleTag}
+          onCycle={cycleTag}
           onClear={clearTags}
           onModeChange={setFilterMode}
         />
 
         <div className="ml-auto flex items-center gap-2">
-          {!selectionMode && (activeTags.length > 0 || (mediaQuery.data?.total ?? 0) > 0) && (
+          {!selectionMode && (includedTags.length > 0 || excludedTags.length > 0 || (mediaQuery.data?.total ?? 0) > 0) && (
             <button
-              onClick={() => mediaApi.bulkDownload(activeTags)}
-              className="text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
+              onClick={() => mediaApi.bulkDownload(includedTags)}
+              className="hidden sm:inline-flex text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
             >
               Download ZIP
             </button>
@@ -225,7 +234,7 @@ export default function GalleryPage() {
         <BulkTagModal
           selectedItems={selectedItems}
           allTags={tagsQuery.data ?? []}
-          onClose={() => setBulkTagOpen(false)}
+          onClose={() => { setBulkTagOpen(false); exitSelection(); }}
         />
       )}
     </AppLayout>

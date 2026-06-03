@@ -10,7 +10,7 @@ export class UserResponseDto {
 
   @Expose()
   @ApiProperty()
-  email: string;
+  username: string;
 
   @Expose()
   @ApiProperty()

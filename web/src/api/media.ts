@@ -3,8 +3,10 @@ import type { MediaItem, PaginatedMedia } from '../types/api';
 
 export async function browse(params: {
   tags?: string;
+  excludeTags?: string;
   mode?: 'and' | 'or';
-  sort?: 'newest' | 'random';
+  sort?: 'newest' | 'oldest' | 'random';
+  maxTags?: number;
   page?: number;
   limit?: number;
 }): Promise<PaginatedMedia> {

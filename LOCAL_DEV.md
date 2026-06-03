@@ -119,12 +119,49 @@ docker compose exec api npm run migration:revert
 
 ---
 
-## Reset everything
+## Resetting local data
 
-Wipes containers and named volumes (database data is lost). Media files in `local-storage/` are **not** deleted.
+There are three levels of reset depending on what you need to clear.
+
+---
+
+### Database only — keep local files
+
+Wipes PostgreSQL (all users, media records, tags) but leaves the files in `local-storage/` untouched. Useful when migrations have changed significantly and you want a clean schema without re-uploading everything.
 
 ```powershell
+docker compose down
+docker volume rm duskbird_postgres_data
+docker compose up -d
+docker compose exec api npm run migration:run
+docker compose exec api npm run seed:admin
+```
+
+---
+
+### Files only — keep the database
+
+Clears everything stored in MinIO (original files and thumbnails) while leaving the database records intact. Note: the database will then contain orphaned records pointing to files that no longer exist, so this is mainly useful before a full re-upload.
+
+```powershell
+Remove-Item local-storage\* -Recurse -Force
+docker compose restart minio
+```
+
+---
+
+### Full reset — database and files
+
+Completely fresh start. All data is lost.
+
+```powershell
+# Stop everything and wipe named volumes (postgres, caddy)
 docker compose down -v
+
+# Clear local media files and thumbnails
+Remove-Item local-storage\* -Recurse -Force
+
+# Rebuild and start
 docker compose up -d --build
 docker compose exec api npm run migration:run
 docker compose exec api npm run seed:admin

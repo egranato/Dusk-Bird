@@ -21,14 +21,14 @@ export class UsersService {
   ) {}
 
   async create(dto: CreateUserDto): Promise<User> {
-    const existing = await this.repo.findOne({ where: { email: dto.email } });
+    const existing = await this.repo.findOne({ where: { username: dto.username } });
     if (existing) {
-      throw new ConflictException(`User with email ${dto.email} already exists`);
+      throw new ConflictException(`Username "${dto.username}" is already taken`);
     }
 
     const passwordHash = await argon2.hash(dto.password);
     const user = this.repo.create({
-      email: dto.email,
+      username: dto.username,
       displayName: dto.displayName,
       passwordHash,
       role: dto.role ?? Role.User,
@@ -45,8 +45,8 @@ export class UsersService {
     return this.repo.findOne({ where: { id } });
   }
 
-  async findByEmail(email: string): Promise<User | null> {
-    return this.repo.findOne({ where: { email } });
+  async findByUsername(username: string): Promise<User | null> {
+    return this.repo.findOne({ where: { username } });
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<User> {
@@ -64,7 +64,6 @@ export class UsersService {
     const user = await this.findById(id);
     if (!user) throw new NotFoundException('User not found');
 
-    // Remove MinIO objects before the DB cascade deletes the media records.
     const mediaRows: { object_key: string }[] = await this.repo.query(
       `SELECT object_key FROM media WHERE uploader_id = $1`,
       [id],

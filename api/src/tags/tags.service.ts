@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -7,6 +8,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
 import slugify from 'slugify';
 import { Tag } from './entities/tag.entity';
+import { TagRequest } from './entities/tag-request.entity';
 import { CreateTagDto } from './dto/create-tag.dto';
 import { UpdateTagDto } from './dto/update-tag.dto';
 import { MergeTagsDto } from './dto/merge-tags.dto';
@@ -17,6 +19,8 @@ export class TagsService {
   constructor(
     @InjectRepository(Tag)
     private readonly tagRepo: Repository<Tag>,
+    @InjectRepository(TagRequest)
+    private readonly requestRepo: Repository<TagRequest>,
     private readonly dataSource: DataSource,
   ) {}
 
@@ -28,7 +32,6 @@ export class TagsService {
     return slugify(name, { lower: true, strict: true });
   }
 
-  // Strips spaces/hyphens so "postmodern" and "post modern" share the same key.
   private comparisonKey(name: string): string {
     return name.replace(/[\s-]+/g, '');
   }
@@ -40,6 +43,16 @@ export class TagsService {
       [key],
     );
     return rows[0] ?? null;
+  }
+
+  // Looks up an existing tag without creating — used for non-admin tag assignment.
+  async findExisting(name: string): Promise<Tag | null> {
+    const normalized = this.normalize(name);
+    const slug = this.makeSlug(normalized);
+    return (
+      (await this.tagRepo.findOne({ where: { slug } })) ??
+      (await this.findBySpaceInsensitive(normalized))
+    );
   }
 
   async create(dto: CreateTagDto, createdById: string): Promise<Tag> {
@@ -59,11 +72,9 @@ export class TagsService {
     const normalized = this.normalize(name);
     const slug = this.makeSlug(normalized);
 
-    // Exact slug match first (fast, indexed).
     const exact = await this.tagRepo.findOne({ where: { slug } });
     if (exact) return exact;
 
-    // Space-insensitive fallback — "postmodern" finds "post-modern".
     const fuzzy = await this.findBySpaceInsensitive(normalized);
     if (fuzzy) return fuzzy;
 
@@ -71,15 +82,47 @@ export class TagsService {
     return this.tagRepo.save(tag);
   }
 
-  async deleteIfUnused(tagId: string): Promise<void> {
-    const rows: { count: string }[] = await this.tagRepo.query(
-      `SELECT COUNT(*) FROM media_tags WHERE tag_id = $1`,
-      [tagId],
-    );
-    if (parseInt(rows[0].count, 10) === 0) {
-      await this.tagRepo.delete(tagId);
-    }
+  // ── Tag requests ────────────────────────────────────────────────────────────
+
+  async createRequest(name: string, requestedById: string): Promise<TagRequest> {
+    const normalized = this.normalize(name);
+    const slug = this.makeSlug(normalized);
+
+    const tagExists = await this.findExisting(normalized);
+    if (tagExists) throw new ConflictException('This tag already exists — select it from the list');
+
+    const pending = await this.requestRepo.findOne({ where: { slug, status: 'pending' } });
+    if (pending) throw new ConflictException('A request for this tag is already pending');
+
+    const req = this.requestRepo.create({ name: normalized, slug, requestedById, status: 'pending' });
+    return this.requestRepo.save(req);
   }
+
+  async listRequests(): Promise<TagRequest[]> {
+    return this.requestRepo.find({
+      where: { status: 'pending' },
+      order: { createdAt: 'ASC' },
+      relations: ['requestedBy'],
+    });
+  }
+
+  async resolveRequest(id: string, action: 'approve' | 'deny', adminId: string): Promise<void> {
+    const req = await this.requestRepo.findOne({ where: { id } });
+    if (!req) throw new NotFoundException('Request not found');
+    if (req.status !== 'pending') throw new BadRequestException('Request is already resolved');
+
+    if (action === 'approve') {
+      const alreadyExists = await this.findExisting(req.name);
+      if (!alreadyExists) {
+        await this.create({ name: req.name }, adminId);
+      }
+    }
+
+    req.status = action === 'approve' ? 'approved' : 'denied';
+    await this.requestRepo.save(req);
+  }
+
+  // ── Standard CRUD ────────────────────────────────────────────────────────────
 
   async findAll(): Promise<TagResponseDto[]> {
     const rows = await this.tagRepo

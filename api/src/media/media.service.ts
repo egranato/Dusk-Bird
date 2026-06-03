@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ConflictException,
   ForbiddenException,
   Injectable,
@@ -8,7 +9,7 @@ import {
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { InjectRepository } from '@nestjs/typeorm';
-import { In, Repository } from 'typeorm';
+import { In, Not, Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { extname } from 'path';
 import * as archiver from 'archiver';
@@ -182,49 +183,105 @@ export class MediaService {
     const limit = dto.limit ?? 50;
     const skip = (page - 1) * limit;
 
+    // Build candidate ID set from filters (null = no restriction).
+    let candidateIds: string[] | null = null;
+
     const tagSlugs = dto.tags
       ? dto.tags.split(',').map((s) => s.trim()).filter(Boolean)
       : [];
 
-    let whereClause = '';
-    let params: unknown[] = [];
-
     if (tagSlugs.length > 0) {
       const ids = await this.filterIdsByTags(tagSlugs, dto.mode ?? 'and');
       if (ids.length === 0) return { data: [], total: 0, page, limit };
-      params.push(ids);
-      whereClause = `WHERE id = ANY($1)`;
+      candidateIds = ids;
     }
 
-    if (dto.sort === 'random') {
-      // For random sort, use raw SQL to get the ordered IDs then load entities.
-      const paramOffset = params.length;
+    if (dto.maxTags !== undefined) {
       const rows: { id: string }[] = await this.mediaRepo.query(
-        `SELECT id FROM media ${whereClause} ORDER BY RANDOM() LIMIT $${paramOffset + 1} OFFSET $${paramOffset + 2}`,
-        [...params, limit, skip],
+        `SELECT m.id FROM media m
+         LEFT JOIN media_tags mt ON mt.media_id = m.id
+         GROUP BY m.id
+         HAVING COUNT(mt.tag_id) <= $1`,
+        [dto.maxTags],
+      );
+      const maxTagIds = rows.map((r) => r.id);
+      if (maxTagIds.length === 0) return { data: [], total: 0, page, limit };
+      if (candidateIds) {
+        const set = new Set(maxTagIds);
+        candidateIds = candidateIds.filter((id) => set.has(id));
+        if (candidateIds.length === 0) return { data: [], total: 0, page, limit };
+      } else {
+        candidateIds = maxTagIds;
+      }
+    }
+
+    // Apply exclude filter.
+    const excludeSlugs = dto.excludeTags
+      ? dto.excludeTags.split(',').map((s) => s.trim()).filter(Boolean)
+      : [];
+
+    let excludedIds: Set<string> | null = null;
+
+    if (excludeSlugs.length > 0) {
+      const exRows: { media_id: string }[] = await this.mediaRepo.query(
+        `SELECT DISTINCT mt.media_id
+         FROM media_tags mt
+         JOIN tags t ON t.id = mt.tag_id
+         WHERE t.slug = ANY($1)`,
+        [excludeSlugs],
+      );
+      excludedIds = new Set(exRows.map((r) => r.media_id));
+
+      if (candidateIds) {
+        candidateIds = candidateIds.filter((id) => !excludedIds!.has(id));
+        if (candidateIds.length === 0) return { data: [], total: 0, page, limit };
+      }
+    }
+
+    // Build final where conditions.
+    let whereCondition: object = {};
+    if (candidateIds) {
+      whereCondition = { id: In(candidateIds) };
+    } else if (excludedIds && excludedIds.size > 0) {
+      whereCondition = { id: Not(In([...excludedIds])) };
+    }
+
+    const whereClause = candidateIds ? `WHERE id = ANY($1)` : '';
+    const baseParams: unknown[] = candidateIds ? [candidateIds] : [];
+
+    if (dto.sort === 'random') {
+      const p = baseParams.length;
+      const rows: { id: string }[] = await this.mediaRepo.query(
+        `SELECT id FROM media ${whereClause} ORDER BY RANDOM() LIMIT $${p + 1} OFFSET $${p + 2}`,
+        [...baseParams, limit, skip],
       );
       const countRows: { count: string }[] = await this.mediaRepo.query(
         `SELECT COUNT(*) FROM media ${whereClause}`,
-        params,
+        baseParams,
       );
       const total = parseInt(countRows[0].count, 10);
-
       if (rows.length === 0) return { data: [], total, page, limit };
 
-      const orderedIds = rows.map((r) => r.id);
+      // For random with excludedIds (no candidateIds): filter after the query.
+      let orderedIds = rows.map((r) => r.id);
+      if (excludedIds && !candidateIds) {
+        orderedIds = orderedIds.filter((id) => !excludedIds!.has(id));
+      }
+      if (orderedIds.length === 0) return { data: [], total: 0, page, limit };
+
       const items = await this.mediaRepo.find({ where: { id: In(orderedIds) } });
-      // Preserve the random order from the SQL query.
       const itemMap = new Map(items.map((m) => [m.id, m]));
       const ordered = orderedIds.map((id) => itemMap.get(id)!).filter(Boolean);
-
       const tagMap = await this.loadTagsForMedia(ordered.map((m) => m.id));
       return { data: ordered.map((m) => this.toDto(m, tagMap.get(m.id) ?? [])), total, page, limit };
     }
 
-    // Newest first (default).
+    const order: { createdAt: 'ASC' | 'DESC' } =
+      dto.sort === 'oldest' ? { createdAt: 'ASC' } : { createdAt: 'DESC' };
+
     const [items, total] = await this.mediaRepo.findAndCount({
-      where: tagSlugs.length > 0 ? { id: In(params[0] as string[]) } : {},
-      order: { createdAt: 'DESC' },
+      where: whereCondition,
+      order,
       skip,
       take: limit,
     });
@@ -298,27 +355,24 @@ export class MediaService {
       throw new ForbiddenException('You do not own this media');
     }
 
-    const tagRows: { tag_id: string }[] = await this.mediaRepo.query(
-      `SELECT tag_id FROM media_tags WHERE media_id = $1`,
-      [id],
-    );
-    const tagIds = tagRows.map((r) => r.tag_id);
-
     await this.minioService.removeObject(media.objectKey);
     if (media.thumbnailKey) {
       await this.minioService.removeObject(media.thumbnailKey).catch(() => undefined);
     }
     await this.mediaRepo.remove(media);
-
-    await Promise.all(tagIds.map((tagId) => this.tagsService.deleteIfUnused(tagId)));
   }
 
-  async addTags(id: string, tagNames: string[], createdById: string): Promise<Media> {
+  async addTags(id: string, tagNames: string[], createdById: string, isAdmin = false): Promise<Media> {
     const media = await this.mediaRepo.findOne({ where: { id } });
     if (!media) throw new NotFoundException('Media not found');
 
     const tags = await Promise.all(
-      tagNames.map((name) => this.tagsService.findOrCreate(name, createdById)),
+      tagNames.map(async (name) => {
+        if (isAdmin) return this.tagsService.findOrCreate(name, createdById);
+        const tag = await this.tagsService.findExisting(name);
+        if (!tag) throw new BadRequestException(`Tag "${name}" does not exist — request it from an admin`);
+        return tag;
+      }),
     );
 
     const existing: { tag_id: string }[] = await this.mediaRepo.query(
@@ -345,7 +399,6 @@ export class MediaService {
       `DELETE FROM media_tags WHERE media_id = $1 AND tag_id = $2`,
       [mediaId, tagId],
     );
-    await this.tagsService.deleteIfUnused(tagId);
     return this.findOne(mediaId);
   }
 }
