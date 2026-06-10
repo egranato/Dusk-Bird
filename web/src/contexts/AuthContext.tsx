@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, useCallback, type ReactNode } from 'react';
+import {
+  createContext,
+  useContext,
+  useState,
+  useCallback,
+  useEffect,
+  type ReactNode,
+} from 'react';
 import * as authApi from '../api/auth';
 import type { UserSummary } from '../types/api';
 
@@ -31,6 +38,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = useCallback(async (username: string, password: string) => {
     const res = await authApi.login(username, password);
     localStorage.setItem('token', res.accessToken);
+    localStorage.setItem('refreshToken', res.refreshToken);
     localStorage.setItem('user', JSON.stringify(res.user));
     setToken(res.accessToken);
     setCurrentUser(res.user);
@@ -38,9 +46,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     localStorage.removeItem('user');
     setToken(null);
     setCurrentUser(null);
+  }, []);
+
+  useEffect(() => {
+    const syncFromStorage = () => {
+      const next = loadFromStorage();
+      setToken(next.token);
+      setCurrentUser(next.user);
+    };
+
+    window.addEventListener('auth:updated', syncFromStorage);
+    window.addEventListener('auth:cleared', syncFromStorage);
+
+    return () => {
+      window.removeEventListener('auth:updated', syncFromStorage);
+      window.removeEventListener('auth:cleared', syncFromStorage);
+    };
   }, []);
 
   return (

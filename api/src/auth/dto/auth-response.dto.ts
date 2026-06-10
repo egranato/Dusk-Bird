@@ -2,10 +2,13 @@ import { ApiProperty } from '@nestjs/swagger';
 
 export class AuthResponseDto {
   @ApiProperty()
-  accessToken: string;
+  accessToken!: string;
 
   @ApiProperty()
-  user: {
+  refreshToken!: string;
+
+  @ApiProperty()
+  user!: {
     id: string;
     username: string;
     displayName: string;

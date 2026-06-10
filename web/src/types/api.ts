@@ -9,6 +9,7 @@ export interface UserSummary {
 
 export interface AuthResponse {
   accessToken: string;
+  refreshToken: string;
   user: UserSummary;
 }
 

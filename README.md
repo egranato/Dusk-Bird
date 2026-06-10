@@ -102,6 +102,7 @@ Edit `.env` — change every password and secret. Key values:
 | Variable | What to set |
 |----------|-------------|
 | `JWT_SECRET` | 32+ random chars — `openssl rand -hex 32` |
+| `JWT_REFRESH_EXPIRES_IN` | Optional; refresh token lifetime (default `30d`) |
 | `DB_PASSWORD`, `MINIO_ROOT_PASSWORD` | Strong unique passwords |
 | `NUC_STORAGE_PATH` | Absolute path on the NUC host, e.g. `/mnt/storage1` |
 | `ADMIN_EMAIL` / `ADMIN_INITIAL_PASSWORD` | Your initial admin account |
@@ -222,7 +223,8 @@ All endpoints except `/api/v1/health` and `POST /api/v1/auth/login` require `Aut
 ### Auth
 | Method | Path | Description |
 |--------|------|-------------|
-| `POST` | `/api/v1/auth/login` | Login; returns JWT |
+| `POST` | `/api/v1/auth/login` | Login; returns access + refresh tokens |
+| `POST` | `/api/v1/auth/refresh` | Refresh access token using refresh token |
 
 ### Users (admin only except `GET /:id`)
 | Method | Path | Description |

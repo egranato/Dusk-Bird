@@ -22,10 +22,19 @@ export class JwtStrategy extends PassportStrategy(Strategy, 'jwt') {
   }
 
   async validate(payload: JwtPayload): Promise<JwtPayload> {
+    if (payload.tokenType !== 'access') {
+      throw new UnauthorizedException();
+    }
+
     const user = await this.usersService.findById(payload.sub);
     if (!user || !user.isActive) {
       throw new UnauthorizedException();
     }
-    return { sub: payload.sub, username: payload.username, role: payload.role };
+    return {
+      sub: payload.sub,
+      username: payload.username,
+      role: payload.role,
+      tokenType: 'access',
+    };
   }
 }
