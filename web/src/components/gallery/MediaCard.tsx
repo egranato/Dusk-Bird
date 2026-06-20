@@ -1,4 +1,4 @@
-import { mediaDownloadUrl, mediaThumbnailUrl } from '../../api/media';
+import { mediaThumbnailUrl } from '../../api/media';
 import type { MediaItem } from '../../types/api';
 
 interface Props {

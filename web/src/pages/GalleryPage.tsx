@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import * as mediaApi from '../api/media';
 import * as tagsApi from '../api/tags';
 import AppLayout from '../components/layout/AppLayout';
@@ -22,7 +22,7 @@ export default function GalleryPage() {
   const [filterMode, setFilterMode] = useState<'and' | 'or'>('and');
   const [untaggedOnly, setUntaggedOnly] = useState(false);
   const [sort, setSort] = useState<'newest' | 'random'>('newest');
-  const [page, setPage] = useState(1);
+  const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Modal state
   const [uploadOpen, setUploadOpen] = useState(false);
@@ -35,25 +35,50 @@ export default function GalleryPage() {
 
   const tagsQuery = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list });
 
-  const mediaQuery = useQuery({
-    queryKey: ['media', includedTags, excludedTags, filterMode, untaggedOnly, sort, page],
-    queryFn: () =>
+  const mediaQuery = useInfiniteQuery({
+    queryKey: ['media', includedTags, excludedTags, filterMode, untaggedOnly, sort],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) =>
       mediaApi.browse({
         tags: !untaggedOnly && includedTags.length > 0 ? includedTags.join(',') : undefined,
         excludeTags: !untaggedOnly && excludedTags.length > 0 ? excludedTags.join(',') : undefined,
         mode: filterMode === 'or' ? 'or' : undefined,
         maxTags: untaggedOnly ? 0 : undefined,
         sort: sort === 'random' ? 'random' : undefined,
-        page,
+        page: pageParam,
         limit: PAGE_SIZE,
       }),
+    getNextPageParam: (lastPage, allPages) => {
+      const loadedCount = allPages.reduce((sum, p) => sum + p.data.length, 0);
+      if (loadedCount >= lastPage.total) return undefined;
+      return allPages.length + 1;
+    },
   });
 
-  const allItems = mediaQuery.data?.data ?? [];
+  const allItems = useMemo(
+    () => mediaQuery.data?.pages.flatMap((p) => p.data) ?? [],
+    [mediaQuery.data],
+  );
+
+  useEffect(() => {
+    const node = loadMoreRef.current;
+    if (!node || !mediaQuery.hasNextPage) return;
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting && mediaQuery.hasNextPage && !mediaQuery.isFetchingNextPage) {
+          mediaQuery.fetchNextPage();
+        }
+      },
+      { rootMargin: '300px 0px' },
+    );
+
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [mediaQuery.hasNextPage, mediaQuery.isFetchingNextPage, mediaQuery.fetchNextPage]);
 
   // ── Tag filter ──────────────────────────────────────────────────────────────
   function cycleTag(slug: string) {
-    setPage(1);
     if (includedTags.includes(slug)) {
       setIncludedTags((prev) => prev.filter((s) => s !== slug));
       setExcludedTags((prev) => [...prev, slug]);
@@ -65,7 +90,6 @@ export default function GalleryPage() {
   }
 
   function clearTags() {
-    setPage(1);
     setIncludedTags([]);
     setExcludedTags([]);
   }
@@ -108,7 +132,6 @@ export default function GalleryPage() {
     }
   }
 
-  const totalPages = mediaQuery.data ? Math.ceil(mediaQuery.data.total / PAGE_SIZE) : 1;
   const selectedItems = allItems.filter((i) => selectedIds.has(i.id));
 
   return (
@@ -126,7 +149,7 @@ export default function GalleryPage() {
         />
 
         <button
-          onClick={() => { setUntaggedOnly((v) => !v); setPage(1); }}
+          onClick={() => setUntaggedOnly((v) => !v)}
           className={`text-sm rounded-full px-3 py-1 border transition-colors ${
             untaggedOnly
               ? 'bg-brand border-brand text-white'
@@ -148,7 +171,7 @@ export default function GalleryPage() {
 
           {!selectionMode && (
             <button
-              onClick={() => { setSort((s) => s === 'newest' ? 'random' : 'newest'); setPage(1); }}
+              onClick={() => setSort((s) => s === 'newest' ? 'random' : 'newest')}
               className="text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
               title={sort === 'newest' ? 'Switch to random order' : 'Switch to newest first'}
             >
@@ -197,24 +220,27 @@ export default function GalleryPage() {
         selectedIds={selectedIds}
       />
 
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex justify-center items-center gap-3 mt-6">
-          <button
-            disabled={page === 1}
-            onClick={() => setPage((p) => p - 1)}
-            className="text-sm text-zinc-400 disabled:opacity-40 hover:text-zinc-100 transition-colors"
-          >
-            ← Previous
-          </button>
-          <span className="text-sm text-zinc-400">{page} / {totalPages}</span>
-          <button
-            disabled={page >= totalPages}
-            onClick={() => setPage((p) => p + 1)}
-            className="text-sm text-zinc-400 disabled:opacity-40 hover:text-zinc-100 transition-colors"
-          >
-            Next →
-          </button>
+      {/* Infinite scroll status */}
+      {allItems.length > 0 && (
+        <div className="mt-6 flex justify-center">
+          <div className="flex flex-col items-center gap-2">
+            <div ref={loadMoreRef} className="text-sm text-zinc-500 px-3 py-2">
+              {mediaQuery.isFetchingNextPage
+                ? 'Loading more…'
+                : mediaQuery.hasNextPage
+                  ? 'Scroll to load more'
+                  : 'End of results'}
+            </div>
+
+            {mediaQuery.hasNextPage && !mediaQuery.isFetchingNextPage && (
+              <button
+                onClick={() => mediaQuery.fetchNextPage()}
+                className="text-sm text-zinc-300 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
+              >
+                Load more
+              </button>
+            )}
+          </div>
         </div>
       )}
 
