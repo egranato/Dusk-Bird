@@ -329,9 +329,13 @@ export class MediaService {
 
     if (dto.sort === 'random') {
       const p = baseParams.length;
+      const orderExpr = dto.seed
+        ? `md5(id::text || $${p + 1}::text)`
+        : 'RANDOM()';
+      const orderParams = dto.seed ? [dto.seed] : [];
       const rows: { id: string }[] = await this.mediaRepo.query(
-        `SELECT id FROM media ${whereClause} ORDER BY RANDOM() LIMIT $${p + 1} OFFSET $${p + 2}`,
-        [...baseParams, limit, skip],
+        `SELECT id FROM media ${whereClause} ORDER BY ${orderExpr} LIMIT $${p + orderParams.length + 1} OFFSET $${p + orderParams.length + 2}`,
+        [...baseParams, ...orderParams, limit, skip],
       );
       const countRows: { count: string }[] = await this.mediaRepo.query(
         `SELECT COUNT(*) FROM media ${whereClause}`,

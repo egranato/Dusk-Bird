@@ -23,6 +23,11 @@ export class BrowseMediaDto {
   @IsIn(['newest', 'oldest', 'random'])
   sort?: 'newest' | 'oldest' | 'random';
 
+  @ApiPropertyOptional({ description: 'Seed for deterministic random ordering' })
+  @IsOptional()
+  @IsString()
+  seed?: string;
+
   @ApiPropertyOptional({ description: 'Only return items with this many tags or fewer', example: 2 })
   @IsOptional()
   @Transform(({ value }) => parseInt(value as string, 10))
