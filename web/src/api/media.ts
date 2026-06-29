@@ -35,6 +35,7 @@ export async function browse(params: {
   excludeTags?: string;
   mode?: 'and' | 'or';
   sort?: 'newest' | 'oldest' | 'random';
+  seed?: string;
   maxTags?: number;
   page?: number;
   limit?: number;

@@ -22,6 +22,7 @@ export default function GalleryPage() {
   const [filterMode, setFilterMode] = useState<'and' | 'or'>('and');
   const [untaggedOnly, setUntaggedOnly] = useState(false);
   const [sort, setSort] = useState<'newest' | 'random'>('newest');
+  const shuffleSeed = useRef<string | null>(null);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
   // Modal state
@@ -35,8 +36,10 @@ export default function GalleryPage() {
 
   const tagsQuery = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list });
 
+  const seed = sort === 'random' ? shuffleSeed.current : undefined;
+
   const mediaQuery = useInfiniteQuery({
-    queryKey: ['media', includedTags, excludedTags, filterMode, untaggedOnly, sort],
+    queryKey: ['media', includedTags, excludedTags, filterMode, untaggedOnly, sort, seed],
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       mediaApi.browse({
@@ -45,6 +48,7 @@ export default function GalleryPage() {
         mode: filterMode === 'or' ? 'or' : undefined,
         maxTags: untaggedOnly ? 0 : undefined,
         sort: sort === 'random' ? 'random' : undefined,
+        seed: seed ?? undefined,
         page: pageParam,
         limit: PAGE_SIZE,
       }),
@@ -172,7 +176,14 @@ export default function GalleryPage() {
 
           {!selectionMode && (
             <button
-              onClick={() => setSort((s) => s === 'newest' ? 'random' : 'newest')}
+              onClick={() => {
+                if (sort === 'newest') {
+                  shuffleSeed.current = Math.random().toString(36).slice(2);
+                  setSort('random');
+                } else {
+                  setSort('newest');
+                }
+              }}
               className="text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
               title={sort === 'newest' ? 'Switch to random order' : 'Switch to newest first'}
             >
