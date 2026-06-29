@@ -9,13 +9,14 @@ import {
   ParseUUIDPipe,
   Post,
   Query,
+  Req,
   Res,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ApiBearerAuth, ApiConsumes, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { JwtPayload } from '../common/types/jwt-payload.type';
 import { MediaService } from './media.service';
@@ -64,9 +65,10 @@ export class MediaController {
   async download(
     @Param('id', ParseUUIDPipe) id: string,
     @Query('thumbnail') thumbnail: string,
+    @Req() req: Request,
     @Res() res: Response,
   ): Promise<void> {
-    return this.mediaService.download(id, thumbnail === 'true', res);
+    return this.mediaService.download(id, thumbnail === 'true', req, res);
   }
 
   @Post('bulk-download')

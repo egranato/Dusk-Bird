@@ -133,6 +133,7 @@ export default function GalleryPage() {
   }
 
   const selectedItems = allItems.filter((i) => selectedIds.has(i.id));
+  const totalItems = mediaQuery.data?.pages[0]?.total ?? 0;
 
   return (
     <AppLayout>
@@ -160,7 +161,7 @@ export default function GalleryPage() {
         </button>
 
         <div className="ml-auto flex items-center gap-2">
-          {!selectionMode && (includedTags.length > 0 || excludedTags.length > 0 || (mediaQuery.data?.total ?? 0) > 0) && (
+          {!selectionMode && (includedTags.length > 0 || excludedTags.length > 0 || totalItems > 0) && (
             <button
               onClick={() => mediaApi.bulkDownload(includedTags)}
               className="hidden sm:inline-flex text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"

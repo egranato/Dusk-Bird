@@ -13,6 +13,7 @@ const api = axios.create({
 
 function clearAuthAndRedirect(): void {
   localStorage.removeItem('token');
+  localStorage.removeItem('mediaToken');
   localStorage.removeItem('refreshToken');
   localStorage.removeItem('user');
   window.dispatchEvent(new Event('auth:cleared'));

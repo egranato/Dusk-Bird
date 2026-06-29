@@ -19,7 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import * as archiver from 'archiver';
 
 const execFileAsync = promisify(execFile);
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import sharp from 'sharp';
 import { Media } from './entities/media.entity';
 import { MinioService } from './minio.service';
@@ -377,25 +377,73 @@ export class MediaService {
     return media;
   }
 
-  async download(id: string, thumbnail: boolean, res: Response): Promise<void> {
+  private buildDownloadEtag(media: Media, useThumbnail: boolean): string {
+    const keyPart = useThumbnail ? (media.thumbnailKey ?? media.objectKey) : media.objectKey;
+    const updatedAt = media.updatedAt?.toISOString() ?? '';
+    const sizePart = String(media.sizeBytes ?? 0);
+    const hash = createHash('sha1')
+      .update(`${media.id}:${keyPart}:${updatedAt}:${sizePart}:${useThumbnail ? 'thumb' : 'original'}`)
+      .digest('hex');
+    return `"${hash}"`;
+  }
+
+  private isNotModified(req: Request, etag: string, updatedAt?: Date): boolean {
+    const ifNoneMatch = req.headers['if-none-match'];
+    const hasMatchingEtag = (value: string): boolean => {
+      const candidates = value.split(',').map((v) => v.trim());
+      return candidates.includes('*') || candidates.includes(etag);
+    };
+
+    if (typeof ifNoneMatch === 'string' && hasMatchingEtag(ifNoneMatch)) {
+      return true;
+    }
+
+    if (Array.isArray(ifNoneMatch) && ifNoneMatch.some((v) => hasMatchingEtag(v))) {
+      return true;
+    }
+
+    const ifModifiedSince = req.headers['if-modified-since'];
+    if (typeof ifModifiedSince === 'string' && updatedAt) {
+      const since = Date.parse(ifModifiedSince);
+      if (!Number.isNaN(since) && updatedAt.getTime() <= since) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  async download(id: string, thumbnail: boolean, req: Request, res: Response): Promise<void> {
     const media = await this.mediaRepo.findOne({ where: { id } });
     if (!media) throw new NotFoundException('Media not found');
 
     const useThumbnail = thumbnail && !!media.thumbnailKey;
     const key = useThumbnail ? media.thumbnailKey : media.objectKey;
     const mimeType = useThumbnail ? 'image/jpeg' : (media.mimeType ?? 'application/octet-stream');
-
-    const stream = await this.minioService.getObject(key);
+    const etag = this.buildDownloadEtag(media, useThumbnail);
 
     if (useThumbnail) {
-      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable, stale-while-revalidate=86400');
       res.setHeader('Content-Disposition', 'inline');
     } else {
+      res.setHeader('Cache-Control', 'private, max-age=0, must-revalidate');
       res.setHeader(
         'Content-Disposition',
         `attachment; filename="${encodeURIComponent(media.fileName)}"`,
       );
     }
+
+    res.setHeader('ETag', etag);
+    res.setHeader('Last-Modified', media.updatedAt.toUTCString());
+    res.setHeader('Vary', 'Accept-Encoding');
+
+    if (this.isNotModified(req, etag, media.updatedAt)) {
+      res.status(304).end();
+      return;
+    }
+
+    const stream = await this.minioService.getObject(key);
+
     res.setHeader('Content-Type', mimeType);
     stream.pipe(res);
   }

@@ -1,6 +1,35 @@
 import api from '../lib/axios';
 import type { MediaItem, PaginatedMedia } from '../types/api';
 
+function getJwtExpiryMs(token: string): number | null {
+  try {
+    const [, payload] = token.split('.');
+    if (!payload) return null;
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const json = JSON.parse(atob(normalized));
+    if (typeof json.exp !== 'number') return null;
+    return json.exp * 1000;
+  } catch {
+    return null;
+  }
+}
+
+function getStableMediaToken(): string {
+  const accessToken = localStorage.getItem('token') ?? '';
+  if (!accessToken) return '';
+
+  const mediaToken = localStorage.getItem('mediaToken');
+  if (mediaToken) {
+    const expiry = getJwtExpiryMs(mediaToken);
+    if (expiry === null || expiry - Date.now() > 60_000) {
+      return mediaToken;
+    }
+  }
+
+  localStorage.setItem('mediaToken', accessToken);
+  return accessToken;
+}
+
 export async function browse(params: {
   tags?: string;
   excludeTags?: string;
@@ -77,13 +106,13 @@ export async function bulkDownload(tagSlugs: string[]): Promise<void> {
 }
 
 export function mediaDownloadUrl(id: string): string {
-  const token = localStorage.getItem('token') ?? '';
+  const token = getStableMediaToken();
   const base = import.meta.env.VITE_API_BASE_URL as string;
   return `${base}/api/v1/media/${id}/download?token=${encodeURIComponent(token)}`;
 }
 
 export function mediaThumbnailUrl(id: string): string {
-  const token = localStorage.getItem('token') ?? '';
+  const token = getStableMediaToken();
   const base = import.meta.env.VITE_API_BASE_URL as string;
   return `${base}/api/v1/media/${id}/download?thumbnail=true&token=${encodeURIComponent(token)}`;
 }
