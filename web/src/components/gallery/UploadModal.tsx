@@ -66,6 +66,8 @@ export default function UploadModal({ tags, onClose }: Props) {
       qc.invalidateQueries({ queryKey: ['tags'] });
       setCurrentFileIndex(0);
       setProgress(0);
+      setFiles([]);
+      if (fileRef.current) fileRef.current.value = '';
       if (duplicates > 0 && uploaded === 0) {
         setError(`${duplicates} file${duplicates > 1 ? 's' : ''} already uploaded — nothing new added.`);
       } else if (duplicates > 0) {
