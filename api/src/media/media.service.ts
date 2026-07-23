@@ -23,6 +23,7 @@ import { Request, Response } from 'express';
 import sharp from 'sharp';
 import { Media } from './entities/media.entity';
 import { MinioService } from './minio.service';
+import { DiscordWebhookService, MAX_DISCORD_UPLOAD_BYTES } from './discord-webhook.service';
 import { Tag } from '../tags/entities/tag.entity';
 import { TagsService } from '../tags/tags.service';
 import { BrowseMediaDto } from './dto/browse-media.dto';
@@ -32,6 +33,10 @@ import { Role } from '../common/types/role.enum';
 import { JwtPayload } from '../common/types/jwt-payload.type';
 
 const ALLOWED_MIME_PREFIXES = ['image/', 'video/'];
+
+// Media carrying either tag never gets posted to Discord — videos are usually too big
+// for the webhook upload limit, and a static thumbnail of a video/gif is just noise.
+const SKIP_WEBHOOK_TAG_SLUGS = new Set(['video', 'animated']);
 
 type TagRow = { media_id: string; tag_id: string; name: string; slug: string };
 
@@ -46,6 +51,7 @@ export class MediaService {
     private readonly tagRepo: Repository<Tag>,
     private readonly minioService: MinioService,
     private readonly tagsService: TagsService,
+    private readonly discordWebhookService: DiscordWebhookService,
   ) {}
 
   private async loadTagsForMedia(
@@ -171,6 +177,63 @@ export class MediaService {
     }
   }
 
+  // Fire-and-forget: posts to each distinct webhook among `tagsToNotify`, without blocking
+  // the caller. DiscordWebhookService swallows its own errors, so a failed post never
+  // surfaces here. `allTagSlugs` is the media's full tag set (not just the ones with a
+  // webhook) — used to decide whether to skip the post outright or fall back to the
+  // thumbnail when the original is too large.
+  private notifyTagWebhooks(media: Media, tagsToNotify: Tag[], allTagSlugs: string[]): void {
+    const webhookUrls = new Map<string, string[]>();
+    for (const tag of tagsToNotify) {
+      if (!tag.webhookUrl) continue;
+      const names = webhookUrls.get(tag.webhookUrl) ?? [];
+      names.push(tag.name);
+      webhookUrls.set(tag.webhookUrl, names);
+    }
+    if (webhookUrls.size === 0) return;
+
+    if (allTagSlugs.some((slug) => SKIP_WEBHOOK_TAG_SLUGS.has(slug))) {
+      this.logger.log(`Skipping Discord webhook post for ${media.id}: video/animated media`);
+      return;
+    }
+
+    const sizeBytes = Number(media.sizeBytes);
+    const useThumbnail = sizeBytes > MAX_DISCORD_UPLOAD_BYTES;
+
+    if (useThumbnail && !media.thumbnailKey) {
+      this.logger.warn(
+        `Skipping Discord webhook post for ${media.id}: no thumbnail available to fall back on`,
+      );
+      return;
+    }
+
+    void (async () => {
+      const key = useThumbnail ? media.thumbnailKey! : media.objectKey;
+      const mimeType = useThumbnail ? 'image/jpeg' : media.mimeType;
+      const fileName = useThumbnail ? `${media.fileName}.thumb.jpg` : media.fileName;
+      const note = useThumbnail
+        ? ` (static preview — original is ${(sizeBytes / (1024 * 1024)).toFixed(0)}MB, over Discord's limit)`
+        : '';
+
+      const stream = await this.minioService.getObject(key);
+      const chunks: Buffer[] = [];
+      for await (const chunk of stream) chunks.push(chunk as Buffer);
+      const buffer = Buffer.concat(chunks);
+
+      for (const [webhookUrl, names] of webhookUrls) {
+        await this.discordWebhookService.postImage(
+          webhookUrl,
+          buffer,
+          fileName,
+          mimeType,
+          `Tagged **${names.join(', ')}**${note}`,
+        );
+      }
+    })().catch((err) =>
+      this.logger.warn(`Discord notification failed for ${media.id}: ${(err as Error).message}`),
+    );
+  }
+
   async upload(file: Express.Multer.File, uploaderId: string): Promise<Media> {
     const mimeType = file.mimetype;
     if (!ALLOWED_MIME_PREFIXES.some((p) => mimeType.startsWith(p))) {
@@ -236,6 +299,7 @@ export class MediaService {
           `INSERT INTO media_tags (media_id, tag_id) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
           params,
         );
+        this.notifyTagWebhooks(media, tags, tags.map((t) => t.slug));
       } catch (err) {
         this.logger.warn(`Auto-tagging failed for ${media.id}: ${(err as Error).message}`);
       }
@@ -519,6 +583,12 @@ export class MediaService {
         `INSERT INTO media_tags (media_id, tag_id) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
         params,
       );
+
+      const existingTags = existingIds.size > 0
+        ? await this.tagRepo.find({ where: { id: In([...existingIds]) } })
+        : [];
+      const allTagSlugs = [...existingTags, ...newTags].map((t) => t.slug);
+      this.notifyTagWebhooks(media, newTags, allTagSlugs);
     }
 
     return this.findOne(id);

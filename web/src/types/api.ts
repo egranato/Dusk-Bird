@@ -34,6 +34,7 @@ export interface TagResponse {
   slug: string;
   usageCount: number;
   createdAt: string;
+  webhookUrl?: string | null;
 }
 
 export interface MediaItem {

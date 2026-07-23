@@ -5,6 +5,7 @@ import { Tag } from '../tags/entities/tag.entity';
 import { MediaController } from './media.controller';
 import { MediaService } from './media.service';
 import { MinioService } from './minio.service';
+import { DiscordWebhookService } from './discord-webhook.service';
 import { TagsModule } from '../tags/tags.module';
 
 @Module({
@@ -13,6 +14,6 @@ import { TagsModule } from '../tags/tags.module';
     TagsModule,
   ],
   controllers: [MediaController],
-  providers: [MediaService, MinioService],
+  providers: [MediaService, MinioService, DiscordWebhookService],
 })
 export class MediaModule {}

@@ -21,6 +21,9 @@ export class Tag {
   @Column({ unique: true, length: 100 })
   slug: string;
 
+  @Column({ name: 'webhook_url', type: 'text', nullable: true })
+  webhookUrl: string | null;
+
   @ManyToOne(() => User, { nullable: true, onDelete: 'SET NULL' })
   @JoinColumn({ name: 'created_by' })
   createdBy: User;

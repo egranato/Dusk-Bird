@@ -9,7 +9,9 @@ export default function TagList() {
   const [mergeOpen, setMergeOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editName, setEditName] = useState('');
+  const [editWebhook, setEditWebhook] = useState('');
   const [newTagName, setNewTagName] = useState('');
+  const [newTagWebhook, setNewTagWebhook] = useState('');
   const newTagRef = useRef<HTMLInputElement>(null);
 
   const { data: tags = [], isLoading } = useQuery({
@@ -36,16 +38,19 @@ export default function TagList() {
   });
 
   const createMutation = useMutation({
-    mutationFn: (name: string) => tagsApi.create(name),
+    mutationFn: ({ name, webhookUrl }: { name: string; webhookUrl: string }) =>
+      tagsApi.create(name, webhookUrl),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tags'] });
       setNewTagName('');
+      setNewTagWebhook('');
       newTagRef.current?.focus();
     },
   });
 
   const renameMutation = useMutation({
-    mutationFn: ({ id, name }: { id: string; name: string }) => tagsApi.update(id, name),
+    mutationFn: ({ id, name, webhookUrl }: { id: string; name: string; webhookUrl: string }) =>
+      tagsApi.update(id, name, webhookUrl),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['tags'] });
       setEditingId(null);
@@ -60,6 +65,7 @@ export default function TagList() {
   function startEdit(tag: TagResponse) {
     setEditingId(tag.id);
     setEditName(tag.name);
+    setEditWebhook(tag.webhookUrl ?? '');
   }
 
   if (isLoading) return <p className="text-zinc-500 text-sm">Loading…</p>;
@@ -68,10 +74,12 @@ export default function TagList() {
     <div>
       <div className="flex justify-between items-center mb-4 gap-3">
         <form
-          className="flex gap-2 flex-1 max-w-xs"
+          className="flex gap-2 flex-1 max-w-lg"
           onSubmit={(e) => {
             e.preventDefault();
-            if (newTagName.trim()) createMutation.mutate(newTagName.trim());
+            if (newTagName.trim()) {
+              createMutation.mutate({ name: newTagName.trim(), webhookUrl: newTagWebhook.trim() });
+            }
           }}
         >
           <input
@@ -79,6 +87,12 @@ export default function TagList() {
             value={newTagName}
             onChange={(e) => setNewTagName(e.target.value)}
             placeholder="New tag name…"
+            className="flex-1 bg-surface-2 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand"
+          />
+          <input
+            value={newTagWebhook}
+            onChange={(e) => setNewTagWebhook(e.target.value)}
+            placeholder="Discord webhook URL (optional)"
             className="flex-1 bg-surface-2 rounded-lg px-3 py-1.5 text-sm outline-none focus:ring-2 focus:ring-brand"
           />
           <button
@@ -147,6 +161,7 @@ export default function TagList() {
               <th className="px-4 py-3">Name</th>
               <th className="px-4 py-3">Slug</th>
               <th className="px-4 py-3">Usage</th>
+              <th className="px-4 py-3">Discord webhook</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -158,18 +173,26 @@ export default function TagList() {
                     <form
                       onSubmit={(e) => {
                         e.preventDefault();
-                        renameMutation.mutate({ id: tag.id, name: editName });
+                        renameMutation.mutate({ id: tag.id, name: editName, webhookUrl: editWebhook.trim() });
                       }}
-                      className="flex gap-2"
+                      className="flex flex-col gap-1"
                     >
+                      <div className="flex gap-2">
+                        <input
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          autoFocus
+                          className="bg-surface-2 rounded px-2 py-0.5 text-sm outline-none focus:ring-1 focus:ring-brand w-36"
+                        />
+                        <button type="submit" className="text-xs text-brand">Save</button>
+                        <button type="button" onClick={() => setEditingId(null)} className="text-xs text-zinc-500">Cancel</button>
+                      </div>
                       <input
-                        value={editName}
-                        onChange={(e) => setEditName(e.target.value)}
-                        autoFocus
-                        className="bg-surface-2 rounded px-2 py-0.5 text-sm outline-none focus:ring-1 focus:ring-brand w-36"
+                        value={editWebhook}
+                        onChange={(e) => setEditWebhook(e.target.value)}
+                        placeholder="Discord webhook URL (optional)"
+                        className="bg-surface-2 rounded px-2 py-0.5 text-xs outline-none focus:ring-1 focus:ring-brand w-full"
                       />
-                      <button type="submit" className="text-xs text-brand">Save</button>
-                      <button type="button" onClick={() => setEditingId(null)} className="text-xs text-zinc-500">Cancel</button>
                     </form>
                   ) : (
                     tag.name
@@ -178,12 +201,19 @@ export default function TagList() {
                 <td className="px-4 py-3 text-zinc-500 font-mono text-xs">{tag.slug}</td>
                 <td className="px-4 py-3 text-zinc-400">{tag.usageCount}</td>
                 <td className="px-4 py-3">
+                  {tag.webhookUrl ? (
+                    <span className="text-xs text-green-400" title={tag.webhookUrl}>Connected</span>
+                  ) : (
+                    <span className="text-xs text-zinc-600">—</span>
+                  )}
+                </td>
+                <td className="px-4 py-3">
                   <div className="flex gap-3 justify-end">
                     <button
                       onClick={() => startEdit(tag)}
                       className="text-xs text-zinc-400 hover:text-zinc-100 transition-colors"
                     >
-                      Rename
+                      Edit
                     </button>
                     <button
                       onClick={() => { if (confirm(`Delete tag "${tag.name}"?`)) deleteMutation.mutate(tag.id); }}

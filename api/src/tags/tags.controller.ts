@@ -34,8 +34,8 @@ export class TagsController {
 
   @Get()
   @ApiOperation({ summary: 'List all tags with usage count' })
-  findAll(): Promise<TagResponseDto[]> {
-    return this.tagsService.findAll();
+  findAll(@CurrentUser() user: JwtPayload): Promise<TagResponseDto[]> {
+    return this.tagsService.findAll(user.role === Role.Admin);
   }
 
   @Post()
