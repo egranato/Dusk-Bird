@@ -100,6 +100,7 @@ services:
       - caddy_config:/config
     networks:
       - internal
+      - edge
     depends_on:
       - api
     mem_limit: 128m
@@ -108,6 +109,8 @@ services:
 networks:
   internal:
     driver: bridge
+  edge:
+    external: true
 
 volumes:
   postgres_data:
