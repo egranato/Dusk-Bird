@@ -53,7 +53,7 @@ DuskBird/
 ├── caddy/        Custom Caddy Dockerfile (Cloudflare DNS plugin)
 ├── Caddyfile     Reverse proxy config (choose your TLS option inside)
 ├── docker-compose.yml
-├── docker-compose.override.yml   Dev overrides (hot reload, exposed ports)
+├── docker-compose.dev.yml        Dev overrides (hot reload, exposed ports) — pass explicitly, not auto-merged
 └── local-storage/                Created automatically for local dev (gitignored)
 ```
 

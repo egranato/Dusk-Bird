@@ -1,3 +1,8 @@
+# Local-dev overlay (hot reload, exposed ports). Not auto-merged — Compose
+# only does that for a file literally named docker-compose.override.yml. This
+# one is intentionally renamed so a plain `docker compose up -d` on the NUC
+# can never pick it up by accident; local dev passes it explicitly:
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 services:
   api:
     build:

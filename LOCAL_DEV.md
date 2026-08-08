@@ -2,6 +2,8 @@
 
 Runs the full backend stack (NestJS, PostgreSQL, MinIO) in Docker with hot reload. Caddy is excluded — no real domain or cert needed locally. The React frontend runs as a separate Vite dev server.
 
+Every `docker compose` command below passes both compose files explicitly — `docker-compose.dev.yml` is intentionally *not* auto-merged (that's what caused the NUC to accidentally run in dev mode), so local dev always needs `-f docker-compose.yml -f docker-compose.dev.yml`. Consider a shell alias, e.g. (PowerShell) `function dcd { docker compose -f docker-compose.yml -f docker-compose.dev.yml @args }`, then use `dcd up -d` etc.
+
 ---
 
 ## First-time setup
@@ -49,7 +51,7 @@ ALLOWED_ORIGINS=http://localhost:5173
 ### 4 — Start the backend stack
 
 ```powershell
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 ```
 
 The `--build` flag installs all API dependencies (including `sharp` for thumbnail generation) inside the Linux container automatically. Watch for all services to become healthy:
@@ -92,7 +94,7 @@ Open **http://localhost:5173** and sign in with `admin@local.dev` / `localadmin1
 
 ```powershell
 # Start the backend (from repo root)
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 
 # Start the frontend (in a separate terminal)
 cd web; npm run dev
@@ -132,7 +134,7 @@ Wipes PostgreSQL (all users, media records, tags) but leaves the files in `local
 ```powershell
 docker compose down
 docker volume rm duskbird_postgres_data
-docker compose up -d
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
 docker compose exec api npm run migration:run
 docker compose exec api npm run seed:admin
 ```
@@ -162,7 +164,7 @@ docker compose down -v
 Remove-Item local-storage\* -Recurse -Force
 
 # Rebuild and start
-docker compose up -d --build
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 docker compose exec api npm run migration:run
 docker compose exec api npm run seed:admin
 ```
