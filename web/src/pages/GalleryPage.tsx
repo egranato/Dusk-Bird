@@ -3,7 +3,7 @@ import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tansta
 import * as mediaApi from '../api/media';
 import * as tagsApi from '../api/tags';
 import AppLayout from '../components/layout/AppLayout';
-import TagFilterBar from '../components/gallery/TagFilterBar';
+import TagFilterPanel from '../components/gallery/TagFilterPanel';
 import MediaGrid from '../components/gallery/MediaGrid';
 import UploadModal from '../components/gallery/UploadModal';
 import MediaDetailModal from '../components/gallery/MediaDetailModal';
@@ -28,6 +28,7 @@ export default function GalleryPage() {
   // Modal state
   const [uploadOpen, setUploadOpen] = useState(false);
   const [detailItem, setDetailItem] = useState<MediaItem | null>(null);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
   // Selection state
   const [selectionMode, setSelectionMode] = useState(false);
@@ -138,123 +139,170 @@ export default function GalleryPage() {
 
   const selectedItems = allItems.filter((i) => selectedIds.has(i.id));
   const totalItems = mediaQuery.data?.pages[0]?.total ?? 0;
+  const activeFilterCount = includedTags.length + excludedTags.length + (untaggedOnly ? 1 : 0);
 
   return (
     <AppLayout>
-      {/* Toolbar */}
-      <div className="flex items-center gap-3 mb-4 flex-wrap">
-        <TagFilterBar
-          tags={tagsQuery.data ?? []}
-          includedSlugs={includedTags}
-          excludedSlugs={excludedTags}
-          mode={filterMode}
-          onCycle={cycleTag}
-          onClear={clearTags}
-          onModeChange={setFilterMode}
-        />
+      <div className="flex gap-6">
+        {/* Desktop sidebar */}
+        <aside className="hidden lg:block w-56 shrink-0 sticky top-20 self-start max-h-[calc(100vh-6rem)] overflow-y-auto">
+          <TagFilterPanel
+            tags={tagsQuery.data ?? []}
+            includedSlugs={includedTags}
+            excludedSlugs={excludedTags}
+            mode={filterMode}
+            untaggedOnly={untaggedOnly}
+            onCycle={cycleTag}
+            onClear={clearTags}
+            onModeChange={setFilterMode}
+            onUntaggedToggle={() => setUntaggedOnly((v) => !v)}
+          />
+        </aside>
 
-        <button
-          onClick={() => setUntaggedOnly((v) => !v)}
-          className={`text-sm rounded-full px-3 py-1 border transition-colors ${
-            untaggedOnly
-              ? 'bg-brand border-brand text-white'
-              : 'border-zinc-600 text-zinc-400 hover:border-zinc-400 hover:text-zinc-200'
-          }`}
-        >
-          Untagged
-        </button>
-
-        <div className="ml-auto flex items-center gap-2">
-          {!selectionMode && (includedTags.length > 0 || excludedTags.length > 0 || totalItems > 0) && (
+        <div className="flex-1 min-w-0">
+          {/* Toolbar */}
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <button
-              onClick={() => mediaApi.bulkDownload(includedTags)}
-              className="hidden sm:inline-flex text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
+              onClick={() => setMobileFiltersOpen(true)}
+              className="lg:hidden relative text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
             >
-              Download ZIP
+              Filters
+              {activeFilterCount > 0 && (
+                <span className="ml-1.5 bg-brand text-white text-xs font-bold rounded-full px-1.5 py-0.5">
+                  {activeFilterCount}
+                </span>
+              )}
             </button>
-          )}
 
-          {!selectionMode && (
-            <button
-              onClick={() => {
-                if (sort === 'newest') {
-                  shuffleSeed.current = Math.random().toString(36).slice(2);
-                  setSort('random');
-                } else {
-                  setSort('newest');
-                }
-              }}
-              className="text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
-              title={sort === 'newest' ? 'Switch to random order' : 'Switch to newest first'}
-            >
-              {sort === 'newest' ? 'Newest' : 'Shuffle'}
-            </button>
-          )}
+            <div className="ml-auto flex items-center gap-2">
+              {!selectionMode && (includedTags.length > 0 || excludedTags.length > 0 || totalItems > 0) && (
+                <button
+                  onClick={() => mediaApi.bulkDownload(includedTags)}
+                  className="hidden sm:inline-flex text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
+                >
+                  Download ZIP
+                </button>
+              )}
 
-          {!selectionMode && allItems.length > 0 && (
-            <button
-              onClick={enterSelection}
-              className="text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
-            >
-              Select
-            </button>
-          )}
+              {!selectionMode && (
+                <button
+                  onClick={() => {
+                    if (sort === 'newest') {
+                      shuffleSeed.current = Math.random().toString(36).slice(2);
+                      setSort('random');
+                    } else {
+                      setSort('newest');
+                    }
+                  }}
+                  className="text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
+                  title={sort === 'newest' ? 'Switch to random order' : 'Switch to newest first'}
+                >
+                  {sort === 'newest' ? 'Newest' : 'Shuffle'}
+                </button>
+              )}
 
-          {selectionMode && allItems.length > 0 && (() => {
-            const allSelected = allItems.length > 0 && allItems.every((i) => selectedIds.has(i.id));
-            return (
-              <button
-                onClick={() => setSelectedIds(allSelected ? new Set() : new Set(allItems.map((i) => i.id)))}
-                className="text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
-              >
-                {allSelected ? 'Deselect all' : 'Select all'}
-              </button>
-            );
-          })()}
+              {!selectionMode && allItems.length > 0 && (
+                <button
+                  onClick={enterSelection}
+                  className="text-sm text-zinc-400 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
+                >
+                  Select
+                </button>
+              )}
 
-          {!selectionMode && (
-            <button
-              onClick={() => setUploadOpen(true)}
-              className="bg-brand hover:bg-brand-hover rounded-lg px-4 py-1.5 text-sm font-medium transition-colors"
-            >
-              Upload
-            </button>
+              {selectionMode && allItems.length > 0 && (() => {
+                const allSelected = allItems.length > 0 && allItems.every((i) => selectedIds.has(i.id));
+                return (
+                  <button
+                    onClick={() => setSelectedIds(allSelected ? new Set() : new Set(allItems.map((i) => i.id)))}
+                    className="text-sm text-zinc-400 hover:text-zinc-100 transition-colors"
+                  >
+                    {allSelected ? 'Deselect all' : 'Select all'}
+                  </button>
+                );
+              })()}
+
+              {!selectionMode && (
+                <button
+                  onClick={() => setUploadOpen(true)}
+                  className="bg-brand hover:bg-brand-hover rounded-lg px-4 py-1.5 text-sm font-medium transition-colors"
+                >
+                  Upload
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Grid */}
+          <MediaGrid
+            items={allItems}
+            isLoading={mediaQuery.isLoading}
+            onSelect={handleCardClick}
+            selectable={selectionMode}
+            selectedIds={selectedIds}
+          />
+
+          {/* Infinite scroll status */}
+          {allItems.length > 0 && (
+            <div className="mt-6 flex justify-center">
+              <div className="flex flex-col items-center gap-2">
+                <div ref={loadMoreRef} className="text-sm text-zinc-500 px-3 py-2">
+                  {mediaQuery.isFetchingNextPage
+                    ? 'Loading more…'
+                    : mediaQuery.hasNextPage
+                      ? 'Scroll to load more'
+                      : 'End of results'}
+                </div>
+
+                {mediaQuery.hasNextPage && !mediaQuery.isFetchingNextPage && (
+                  <button
+                    onClick={() => mediaQuery.fetchNextPage()}
+                    className="text-sm text-zinc-300 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
+                  >
+                    Load more
+                  </button>
+                )}
+              </div>
+            </div>
           )}
         </div>
       </div>
 
-      {/* Grid */}
-      <MediaGrid
-        items={allItems}
-        isLoading={mediaQuery.isLoading}
-        onSelect={handleCardClick}
-        selectable={selectionMode}
-        selectedIds={selectedIds}
-      />
-
-      {/* Infinite scroll status */}
-      {allItems.length > 0 && (
-        <div className="mt-6 flex justify-center">
-          <div className="flex flex-col items-center gap-2">
-            <div ref={loadMoreRef} className="text-sm text-zinc-500 px-3 py-2">
-              {mediaQuery.isFetchingNextPage
-                ? 'Loading more…'
-                : mediaQuery.hasNextPage
-                  ? 'Scroll to load more'
-                  : 'End of results'}
-            </div>
-
-            {mediaQuery.hasNextPage && !mediaQuery.isFetchingNextPage && (
-              <button
-                onClick={() => mediaQuery.fetchNextPage()}
-                className="text-sm text-zinc-300 hover:text-zinc-100 border border-zinc-700 hover:border-zinc-500 rounded-lg px-3 py-1.5 transition-colors"
-              >
-                Load more
-              </button>
-            )}
+      {/* Mobile filter drawer */}
+      <div
+        className={`lg:hidden fixed inset-0 z-50 transition-opacity ${
+          mobileFiltersOpen ? 'opacity-100' : 'opacity-0 pointer-events-none'
+        }`}
+      >
+        <div className="absolute inset-0 bg-black/70" onClick={() => setMobileFiltersOpen(false)} />
+        <div
+          className={`absolute inset-y-0 left-0 w-72 max-w-[85vw] bg-surface-1 border-r border-zinc-800 p-4 flex flex-col overflow-y-auto transition-transform duration-200 ${
+            mobileFiltersOpen ? 'translate-x-0' : '-translate-x-full'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-3">
+            <span className="text-sm font-semibold text-zinc-200">Filters</span>
+            <button
+              onClick={() => setMobileFiltersOpen(false)}
+              className="text-zinc-400 hover:text-zinc-200 text-xl leading-none px-1"
+            >
+              &times;
+            </button>
           </div>
+
+          <TagFilterPanel
+            tags={tagsQuery.data ?? []}
+            includedSlugs={includedTags}
+            excludedSlugs={excludedTags}
+            mode={filterMode}
+            untaggedOnly={untaggedOnly}
+            onCycle={cycleTag}
+            onClear={clearTags}
+            onModeChange={setFilterMode}
+            onUntaggedToggle={() => setUntaggedOnly((v) => !v)}
+          />
         </div>
-      )}
+      </div>
 
       {/* Modals */}
       {uploadOpen && (
