@@ -154,8 +154,10 @@ docker compose logs -f   # watch until all services are healthy (~30s)
 
 ### 5 — Run migrations and seed admin
 
+The production image only ships compiled `dist/`, not `src/` — run migrations against the compiled data source, not the `migration:run` npm script (which expects `src/` and ts-node):
+
 ```bash
-docker compose exec api npm run migration:run
+docker compose exec api node_modules/.bin/typeorm migration:run -d dist/database/data-source.js
 docker compose exec api npm run seed:admin
 ```
 
@@ -264,7 +266,7 @@ All endpoints except `/api/v1/health` and `POST /api/v1/auth/login` require `Aut
 ```bash
 git pull
 docker compose up -d --build
-docker compose exec api npm run migration:run
+docker compose exec api node_modules/.bin/typeorm migration:run -d dist/database/data-source.js
 ```
 
 Frontend:
