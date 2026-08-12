@@ -37,6 +37,7 @@ export default function TaggingPage() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const [currentTags, setCurrentTags] = useState<TagSummary[]>([]);
+  const [previousTags, setPreviousTags] = useState<TagSummary[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const tagsQuery = useQuery({ queryKey: ['tags'], queryFn: tagsApi.list });
@@ -83,6 +84,14 @@ export default function TaggingPage() {
     },
   });
 
+  const applyPreviousMutation = useMutation({
+    mutationFn: (tagNames: string[]) => mediaApi.addTags(item!.id, tagNames),
+    onSuccess: (updated) => {
+      setCurrentTags(updated.tags ?? []);
+      qc.invalidateQueries({ queryKey: ['tagging-queue-count'] });
+    },
+  });
+
   const deleteMutation = useMutation({
     mutationFn: () => mediaApi.remove(item!.id),
     onSuccess: () => {
@@ -102,9 +111,19 @@ export default function TaggingPage() {
     }
   }
 
+  function goNext() {
+    setPreviousTags(currentTags);
+    advance();
+  }
+
   const isVideo = item?.mimeType.startsWith('video/');
-  const mutating = addMutation.isPending || removeMutation.isPending || deleteMutation.isPending;
+  const mutating =
+    addMutation.isPending ||
+    removeMutation.isPending ||
+    deleteMutation.isPending ||
+    applyPreviousMutation.isPending;
   const appliedIds = new Set(currentTags.map((t) => t.id));
+  const previousTagsToApply = previousTags.filter((t) => !appliedIds.has(t.id));
 
   const quickAdd = (tagsQuery.data ?? [])
     .filter((t) => !appliedIds.has(t.id))
@@ -163,6 +182,17 @@ export default function TaggingPage() {
           )}
         </div>
 
+        {/* Copy tags from the previous item */}
+        {previousTags.length > 0 && (
+          <button
+            onClick={() => applyPreviousMutation.mutate(previousTagsToApply.map((t) => t.name))}
+            disabled={mutating || previousTagsToApply.length === 0}
+            className="text-sm px-3 py-1.5 rounded-lg border border-zinc-600 text-zinc-300 hover:border-brand hover:text-brand disabled:opacity-40 transition-colors"
+          >
+            ↺ Copy previous tags ({previousTags.map((t) => t.name).join(', ')})
+          </button>
+        )}
+
         {/* Current tags */}
         <div className="flex flex-wrap gap-2 min-h-[2rem] items-center">
           {currentTags.length === 0 && (
@@ -209,7 +239,7 @@ export default function TaggingPage() {
         <div className="flex justify-between pt-2">
           <div className="flex items-center gap-3">
             <button
-              onClick={advance}
+              onClick={goNext}
               className="text-sm text-zinc-500 hover:text-zinc-300 transition-colors"
             >
               Skip →
@@ -223,7 +253,7 @@ export default function TaggingPage() {
             </button>
           </div>
           <button
-            onClick={advance}
+            onClick={goNext}
             disabled={currentTags.length === 0}
             className="bg-surface-2 hover:bg-surface-3 disabled:opacity-40 rounded-xl px-6 py-2.5 text-sm font-medium transition-colors"
           >

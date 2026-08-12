@@ -14,7 +14,7 @@ export default function MediaCard({ item, onClick, selectable, selected }: Props
   return (
     <button
       onClick={onClick}
-      className={`group relative w-full bg-surface-1 rounded-xl overflow-hidden focus:outline-none focus:ring-2 focus:ring-brand sm:aspect-square transition-transform ${
+      className={`group relative w-full bg-surface-1 rounded-xl overflow-hidden focus:outline-none focus:ring-2 focus:ring-brand transition-transform ${
         selected ? 'ring-2 ring-brand scale-[0.96]' : ''
       }`}
     >
@@ -23,7 +23,7 @@ export default function MediaCard({ item, onClick, selectable, selected }: Props
           <img
             src={mediaThumbnailUrl(item.id)}
             alt=""
-            className="w-full h-auto sm:h-full sm:object-cover"
+            className="w-full h-auto"
             loading="lazy"
           />
           <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -38,7 +38,7 @@ export default function MediaCard({ item, onClick, selectable, selected }: Props
         <img
           src={mediaThumbnailUrl(item.id)}
           alt=""
-          className="w-full h-auto sm:h-full sm:object-cover"
+          className="w-full h-auto"
           loading="lazy"
         />
       )}

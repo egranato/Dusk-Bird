@@ -12,9 +12,9 @@ interface Props {
 export default function MediaGrid({ items, isLoading, onSelect, selectable, selectedIds }: Props) {
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
         {Array.from({ length: 24 }).map((_, i) => (
-          <div key={i} className="aspect-square bg-surface-1 rounded-xl animate-pulse" />
+          <div key={i} className="aspect-video bg-surface-1 rounded-xl animate-pulse" />
         ))}
       </div>
     );
@@ -30,7 +30,7 @@ export default function MediaGrid({ items, isLoading, onSelect, selectable, sele
   }
 
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 gap-2">
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
       {items.map((item) => (
         <MediaCard
           key={item.id}
