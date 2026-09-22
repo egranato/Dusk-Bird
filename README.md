@@ -279,6 +279,8 @@ docker compose exec api node_modules/.bin/typeorm migration:run -d dist/database
 
 **Changed `.env` and just need to apply it (no code changes)?** A plain `docker compose restart` reuses the existing containers as-is and will **not** pick up the new values — use `.\duskbird.ps1 prod-restart` (or `docker compose up -d --force-recreate`) instead.
 
+**Changed the `Caddyfile`?** `prod-update` already reloads Caddy for you (see next section) — `docker compose up -d --build` alone does **not**, since the file is bind-mounted and Caddy only re-reads it when told to. If you only edited the Caddyfile and don't need a full update, run `.\duskbird.ps1 prod-caddy-reload` — zero downtime, and nothing else is touched.
+
 Frontend:
 
 ```bash

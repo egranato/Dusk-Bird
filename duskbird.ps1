@@ -28,7 +28,8 @@ param(
         'dev-migrate', 'dev-migrate-revert', 'dev-seed',
         'dev-reset-db', 'dev-reset-files', 'dev-reset-all', 'dev-web',
         'prod-deploy', 'prod-update', 'prod-restart', 'prod-logs',
-        'prod-migrate', 'prod-migrate-revert', 'prod-seed', 'prod-backup', 'prod-reset'
+        'prod-migrate', 'prod-migrate-revert', 'prod-seed', 'prod-backup', 'prod-reset',
+        'prod-caddy-reload'
     )]
     [string]$Command = 'help',
 
@@ -51,6 +52,19 @@ function Confirm-Destructive($msg) {
     if ($Force) { return $true }
     $answer = Read-Host "$msg Type 'yes' to continue"
     return $answer -eq 'yes'
+}
+
+# Caddy does NOT pick up Caddyfile edits on its own — the file is bind-mounted, but the
+# running process keeps its already-loaded config until it's told to reload (or the
+# container restarts). `caddy reload` re-reads the file and swaps it in with zero downtime,
+# without touching api/postgres/minio. A bad Caddyfile just fails the reload and keeps
+# running on the old (working) config — it never takes the site down.
+function Invoke-CaddyReload {
+    Step 'Reloading Caddy config (zero-downtime — only caddy is touched)'
+    docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host 'Caddy reload failed — check the Caddyfile syntax. The old config is still running.' -ForegroundColor Red
+    }
 }
 
 switch ($Command) {
@@ -154,6 +168,7 @@ switch ($Command) {
         docker compose exec -T api node_modules/.bin/typeorm migration:run -d dist/database/data-source.js
         Step 'Seeding admin user (safe to re-run)'
         docker compose exec -T api npm run seed:admin
+        Invoke-CaddyReload
     }
 
     'prod-update' {
@@ -163,11 +178,20 @@ switch ($Command) {
         docker compose up -d --build
         Step 'Running migrations'
         docker compose exec -T api node_modules/.bin/typeorm migration:run -d dist/database/data-source.js
+        # `up -d --build` only recreates containers Compose thinks changed — a git pull that
+        # only touched the Caddyfile (a bind mount, not part of the service definition) won't
+        # trigger that, so caddy is still running its old in-memory config unless we push it.
+        Invoke-CaddyReload
+    }
+
+    'prod-caddy-reload' {
+        Invoke-CaddyReload
     }
 
     'prod-restart' {
         # Plain `docker compose restart` reuses the existing containers as-is and will NOT
         # pick up .env changes — force-recreate is what actually reloads the environment.
+        # (For a Caddyfile-only change, prod-caddy-reload is lighter — this recreates everything.)
         Step 'Force-recreating containers (picks up .env changes — a plain restart will not)'
         docker compose up -d --force-recreate
     }
@@ -229,9 +253,10 @@ Local dev (run from your Windows dev machine):
   dev-web              Run the Vite dev server (foreground)
 
 NUC production (run on the NUC itself):
-  prod-deploy          Build, start, migrate, seed — first-time bring-up
-  prod-update          git pull, rebuild, restart, migrate
+  prod-deploy          Build, start, migrate, seed, reload Caddy — first-time bring-up
+  prod-update          git pull, rebuild, restart, migrate, reload Caddy
   prod-restart         Force-recreate containers — use this after editing .env
+  prod-caddy-reload    Reload just the Caddyfile (zero-downtime, no other containers touched)
   prod-logs            Follow logs (-Service to scope to one)
   prod-migrate         Run pending migrations
   prod-migrate-revert  Revert the last migration
