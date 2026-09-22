@@ -19,6 +19,7 @@ export interface User {
   displayName: string;
   role: Role;
   isActive: boolean;
+  lastLoginAt: string | null;
   createdAt: string;
 }
 

@@ -49,6 +49,10 @@ export class UsersService {
     return this.repo.findOne({ where: { username } });
   }
 
+  async recordLogin(id: string): Promise<void> {
+    await this.repo.update(id, { lastLoginAt: new Date() });
+  }
+
   async update(id: string, dto: UpdateUserDto): Promise<User> {
     const user = await this.findById(id);
     if (!user) throw new NotFoundException('User not found');

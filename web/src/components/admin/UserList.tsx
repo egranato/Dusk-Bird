@@ -12,6 +12,14 @@ const passwordSchema = z.object({
 });
 type PasswordForm = z.infer<typeof passwordSchema>;
 
+function formatLastLogin(value: string | null): string {
+  if (!value) return 'Never';
+  return new Date(value).toLocaleString(undefined, {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+  });
+}
+
 function ResetPasswordRow({ user, onDone }: { user: User; onDone: () => void }) {
   const qc = useQueryClient();
   const { register, handleSubmit, formState: { errors, isSubmitting } } = useForm<PasswordForm>({
@@ -25,7 +33,7 @@ function ResetPasswordRow({ user, onDone }: { user: User; onDone: () => void }) 
 
   return (
     <tr className="border-b border-zinc-800/50 bg-surface-2/30">
-      <td colSpan={5} className="px-4 py-3">
+      <td colSpan={6} className="px-4 py-3">
         <form onSubmit={handleSubmit((v) => mutation.mutate(v))} className="flex items-center gap-2">
           <span className="text-xs text-zinc-400 mr-1">New password for {user.displayName}:</span>
           <input
@@ -94,6 +102,7 @@ export default function UserList() {
               <th className="px-4 py-3">Username</th>
               <th className="px-4 py-3">Role</th>
               <th className="px-4 py-3">Status</th>
+              <th className="px-4 py-3">Last login</th>
               <th className="px-4 py-3"></th>
             </tr>
           </thead>
@@ -114,6 +123,9 @@ export default function UserList() {
                     <span className={`text-xs ${user.isActive ? 'text-green-400' : 'text-zinc-500'}`}>
                       {user.isActive ? 'Active' : 'Inactive'}
                     </span>
+                  </td>
+                  <td className="px-4 py-3 text-zinc-400 text-xs">
+                    {formatLastLogin(user.lastLoginAt)}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex gap-3 justify-end">

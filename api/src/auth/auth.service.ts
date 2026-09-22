@@ -27,6 +27,8 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
+    await this.usersService.recordLogin(user.id);
+
     return this.issueTokensForUser(user);
   }
 
