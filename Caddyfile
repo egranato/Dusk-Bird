@@ -13,10 +13,6 @@
 }
 
 kylistran.tplinkdns.com {
-    handle_path /workouts/* {
-        reverse_proxy workout-api:8080
-    }
-
     handle_path /chapters/* {
         reverse_proxy kylistran-api:8080
     }
