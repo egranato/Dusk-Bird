@@ -1,8 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import { IsIn, IsInt, IsOptional, IsString, Max, Min } from 'class-validator';
+import { MediaKind } from '../entities/media.entity';
 
 export class BrowseMediaDto {
+  @ApiPropertyOptional({ enum: MediaKind, description: 'Restrict results to media (photo/video) or files' })
+  @IsOptional()
+  @IsIn(Object.values(MediaKind))
+  kind?: MediaKind;
+
   @ApiPropertyOptional({ description: 'Comma-separated tag slugs to include', example: 'beach,summer' })
   @IsOptional()
   @IsString()

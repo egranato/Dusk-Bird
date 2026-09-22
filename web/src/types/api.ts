@@ -34,8 +34,10 @@ export interface TagResponse {
   slug: string;
   usageCount: number;
   createdAt: string;
-  webhookUrl?: string | null;
 }
+
+export type MediaVisibility = 'private' | 'public';
+export type MediaKind = 'media' | 'file';
 
 export interface MediaItem {
   id: string;
@@ -43,6 +45,8 @@ export interface MediaItem {
   fileName: string;
   mimeType: string;
   sizeBytes: number;
+  visibility: MediaVisibility;
+  kind: MediaKind;
   tags: TagSummary[];
   createdAt: string;
   updatedAt: string;

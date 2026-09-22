@@ -10,7 +10,7 @@ export default function AppLayout({ children }: { children: ReactNode }) {
 
   const queueQuery = useQuery({
     queryKey: ['tagging-queue-count'],
-    queryFn: () => mediaApi.browse({ maxTags: 2, limit: 1 }),
+    queryFn: () => mediaApi.browse({ kind: 'media', maxTags: 2, limit: 1 }),
     staleTime: 30_000,
   });
   const queueCount = queueQuery.data?.total ?? 0;
@@ -44,6 +44,15 @@ export default function AppLayout({ children }: { children: ReactNode }) {
                 {queueCount > 99 ? '99+' : queueCount}
               </span>
             )}
+          </Link>
+
+          <Link
+            to="/files"
+            className={`text-sm transition-colors ${
+              pathname === '/files' ? 'text-zinc-100' : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            Files
           </Link>
 
           {isAdmin && (

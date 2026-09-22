@@ -2,11 +2,8 @@ import { useRef, useState } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import axios from 'axios';
 import * as mediaApi from '../../api/media';
-import TagInput from '../shared/TagInput';
-import type { TagResponse } from '../../types/api';
 
 interface Props {
-  tags: TagResponse[];
   onClose: () => void;
 }
 
@@ -15,18 +12,11 @@ interface UploadResult {
   duplicates: number;
 }
 
-const ACCEPTED = ['image/', 'video/'];
-
-function filterMediaFiles(fileList: FileList | File[]): File[] {
-  return Array.from(fileList).filter((f) => ACCEPTED.some((p) => f.type.startsWith(p)));
-}
-
-export default function UploadModal({ tags, onClose }: Props) {
+export default function FilesUploadModal({ onClose }: Props) {
   const qc = useQueryClient();
   const fileRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [dragging, setDragging] = useState(false);
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [visibleToEveryone, setVisibleToEveryone] = useState(false);
   const [error, setError] = useState('');
   const [currentFileIndex, setCurrentFileIndex] = useState(0);
@@ -35,13 +25,11 @@ export default function UploadModal({ tags, onClose }: Props) {
   function handleDrop(e: React.DragEvent) {
     e.preventDefault();
     setDragging(false);
-    const dropped = filterMediaFiles(e.dataTransfer.files);
-    if (dropped.length > 0) setFiles(dropped);
+    if (e.dataTransfer.files.length > 0) setFiles(Array.from(e.dataTransfer.files));
   }
 
   const mutation = useMutation<UploadResult>({
     mutationFn: async () => {
-      const tagNames = selectedTags;
       let uploaded = 0;
       let duplicates = 0;
 
@@ -49,8 +37,7 @@ export default function UploadModal({ tags, onClose }: Props) {
         setCurrentFileIndex(i + 1);
         setProgress(0);
         try {
-          const media = await mediaApi.upload(files[i], setProgress, visibleToEveryone ? 'public' : 'private');
-          if (tagNames.length > 0) await mediaApi.addTags(media.id, tagNames);
+          await mediaApi.upload(files[i], setProgress, visibleToEveryone ? 'public' : 'private');
           uploaded++;
         } catch (err) {
           if (axios.isAxiosError(err) && err.response?.status === 409) {
@@ -64,7 +51,6 @@ export default function UploadModal({ tags, onClose }: Props) {
     },
     onSuccess: ({ uploaded, duplicates }) => {
       qc.invalidateQueries({ queryKey: ['media'] });
-      qc.invalidateQueries({ queryKey: ['tags'] });
       setCurrentFileIndex(0);
       setProgress(0);
       setFiles([]);
@@ -80,20 +66,16 @@ export default function UploadModal({ tags, onClose }: Props) {
     onError: () => {
       setCurrentFileIndex(0);
       setProgress(0);
-      setError('Upload failed — check file type (images and videos only)');
+      setError('Upload failed');
     },
   });
-
-  function removeSelectedTag(name: string) {
-    setSelectedTags((prev) => prev.filter((t) => t !== name));
-  }
 
   const isUploading = mutation.isPending;
 
   return (
     <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50 p-4" onClick={onClose}>
       <div className="bg-surface-1 rounded-2xl p-6 w-full max-w-md" onClick={(e) => e.stopPropagation()}>
-        <h3 className="text-lg font-semibold mb-4">Upload media</h3>
+        <h3 className="text-lg font-semibold mb-4">Upload files</h3>
 
         <div
           className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors mb-4 ${
@@ -110,10 +92,9 @@ export default function UploadModal({ tags, onClose }: Props) {
           <input
             ref={fileRef}
             type="file"
-            accept="image/*,video/*"
             multiple
             className="hidden"
-            onChange={(e) => setFiles(filterMediaFiles(e.target.files ?? new FileList()))}
+            onChange={(e) => setFiles(Array.from(e.target.files ?? []))}
           />
           {files.length > 0 ? (
             <p className="text-sm text-zinc-300">
@@ -123,29 +104,9 @@ export default function UploadModal({ tags, onClose }: Props) {
             <p className="text-sm text-brand font-medium">Drop to add</p>
           ) : (
             <p className="text-sm text-zinc-500">
-              Drag & drop or <span className="text-zinc-300">click to browse</span>
+              Drag & drop or <span className="text-zinc-300">click to browse</span> — any file type, up to 20GB
             </p>
           )}
-        </div>
-
-        <div className="mb-4">
-          <label className="block text-sm text-zinc-300 mb-1">Tags (optional)</label>
-          {selectedTags.length > 0 && (
-            <div className="flex flex-wrap gap-1 mb-2">
-              {selectedTags.map((name) => (
-                <span key={name} className="flex items-center gap-1 bg-brand/20 text-brand rounded-full text-xs px-2 py-0.5">
-                  {name}
-                  <button onClick={() => removeSelectedTag(name)} className="hover:text-white">×</button>
-                </span>
-              ))}
-            </div>
-          )}
-          <TagInput
-            allTags={tags}
-            appliedIds={new Set(selectedTags.map(n => tags.find(t => t.name === n)?.id ?? ''))}
-            onAdd={(name) => setSelectedTags((prev) => prev.includes(name) ? prev : [...prev, name])}
-            placeholder="Search tags…"
-          />
         </div>
 
         <label className="flex items-center gap-2 mb-4 text-sm text-zinc-300 cursor-pointer">
@@ -160,7 +121,6 @@ export default function UploadModal({ tags, onClose }: Props) {
 
         {error && <p className="text-red-400 text-sm mb-3">{error}</p>}
 
-        {/* Progress bar */}
         {isUploading && (
           <div className="mb-4">
             <p className="text-xs text-zinc-400 mb-1.5">

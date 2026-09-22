@@ -12,6 +12,16 @@ import {
 import { User } from '../../users/entities/user.entity';
 import { Tag } from '../../tags/entities/tag.entity';
 
+export enum MediaVisibility {
+  Private = 'private',
+  Public = 'public',
+}
+
+export enum MediaKind {
+  Media = 'media',
+  File = 'file',
+}
+
 @Entity('media')
 export class Media {
   @PrimaryGeneratedColumn('uuid')
@@ -41,6 +51,12 @@ export class Media {
 
   @Column({ name: 'thumbnail_key', type: 'text', nullable: true })
   thumbnailKey: string;
+
+  @Column({ type: 'varchar', length: 10, default: MediaVisibility.Private })
+  visibility: MediaVisibility;
+
+  @Column({ type: 'varchar', length: 10, default: MediaKind.Media })
+  kind: MediaKind;
 
   @ManyToMany(() => Tag, (tag) => tag.media, { eager: false })
   @JoinTable({

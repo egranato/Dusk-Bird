@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { MediaKind, MediaVisibility } from '../entities/media.entity';
 
 export class TagSummaryDto {
   @ApiProperty()
@@ -26,6 +27,12 @@ export class MediaResponseDto {
 
   @ApiProperty()
   sizeBytes: number;
+
+  @ApiProperty({ enum: MediaVisibility })
+  visibility: MediaVisibility;
+
+  @ApiProperty({ enum: MediaKind })
+  kind: MediaKind;
 
   @ApiProperty({ type: [TagSummaryDto] })
   tags: TagSummaryDto[];

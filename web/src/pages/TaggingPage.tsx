@@ -44,7 +44,7 @@ export default function TaggingPage() {
 
   const queueQuery = useQuery({
     queryKey: ['tagging-queue'],
-    queryFn: () => mediaApi.browse({ maxTags: 2, sort: 'oldest', limit: BATCH_SIZE }),
+    queryFn: () => mediaApi.browse({ kind: 'media', maxTags: 2, sort: 'oldest', limit: BATCH_SIZE }),
   });
 
   const items = queueQuery.data?.data ?? [];

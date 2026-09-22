@@ -45,7 +45,26 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
     },
   });
 
+  const visibilityMutation = useMutation({
+    mutationFn: () =>
+      mediaApi.setVisibility(currentItem.id, currentItem.visibility === 'public' ? 'private' : 'public'),
+    onSuccess: (updated) => {
+      setCurrentItem({ ...currentItem, visibility: updated.visibility });
+      qc.invalidateQueries({ queryKey: ['media'] });
+    },
+  });
+
   const canDelete = isAdmin || currentItem.uploaderId === currentUser?.id;
+  const canManage = canDelete;
+  const [linkCopied, setLinkCopied] = useState(false);
+
+  function copyLink() {
+    const url = `${window.location.origin}/media/${currentItem.id}`;
+    navigator.clipboard.writeText(url).then(() => {
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 1500);
+    });
+  }
 
   return (
     <div
@@ -74,6 +93,22 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
             <button onClick={onClose} className="text-zinc-500 hover:text-zinc-200 text-xl leading-none flex-shrink-0">
               ×
             </button>
+          </div>
+
+          {/* Visibility */}
+          <div className="flex-shrink-0 flex items-center justify-between gap-2 bg-surface-2 rounded-lg px-3 py-2">
+            <span className="text-xs text-zinc-400">
+              {currentItem.visibility === 'public' ? 'Visible to everyone' : 'Private — only you and admins'}
+            </span>
+            {canManage && (
+              <button
+                onClick={() => visibilityMutation.mutate()}
+                disabled={visibilityMutation.isPending}
+                className="text-xs text-brand hover:text-brand-hover disabled:opacity-40 transition-colors flex-shrink-0"
+              >
+                {currentItem.visibility === 'public' ? 'Make private' : 'Make public'}
+              </button>
+            )}
           </div>
 
           {/* Tags */}
@@ -132,6 +167,12 @@ export default function MediaDetailModal({ item, allTags, onClose, onDeleted }: 
             >
               Download
             </a>
+            <button
+              onClick={copyLink}
+              className="block text-center bg-surface-2 hover:bg-surface-3 rounded-lg py-2 text-sm transition-colors"
+            >
+              {linkCopied ? 'Link copied!' : 'Copy link'}
+            </button>
             {canDelete && (
               <button
                 onClick={() => { if (confirm('Delete this file?')) deleteMutation.mutate(); }}

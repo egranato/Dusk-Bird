@@ -1,4 +1,4 @@
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 
 export class TagResponseDto {
   @ApiProperty()
@@ -15,7 +15,4 @@ export class TagResponseDto {
 
   @ApiProperty()
   createdAt: Date;
-
-  @ApiPropertyOptional({ description: 'Only present for admins' })
-  webhookUrl?: string | null;
 }

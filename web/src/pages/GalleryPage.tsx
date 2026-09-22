@@ -40,10 +40,11 @@ export default function GalleryPage() {
   const seed = sort === 'random' ? shuffleSeed.current : undefined;
 
   const mediaQuery = useInfiniteQuery({
-    queryKey: ['media', includedTags, excludedTags, filterMode, untaggedOnly, sort, seed],
+    queryKey: ['media', 'media', includedTags, excludedTags, filterMode, untaggedOnly, sort, seed],
     initialPageParam: 1,
     queryFn: ({ pageParam }) =>
       mediaApi.browse({
+        kind: 'media',
         tags: !untaggedOnly && includedTags.length > 0 ? includedTags.join(',') : undefined,
         excludeTags: !untaggedOnly && excludedTags.length > 0 ? excludedTags.join(',') : undefined,
         mode: filterMode === 'or' ? 'or' : undefined,

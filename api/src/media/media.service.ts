@@ -5,12 +5,12 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  UnsupportedMediaTypeException,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { writeFile, readFile, unlink } from 'fs/promises';
+import { createReadStream } from 'fs';
+import { readFile, unlink } from 'fs/promises';
 import { tmpdir } from 'os';
 import { extname, join } from 'path';
 import { InjectRepository } from '@nestjs/typeorm';
@@ -21,10 +21,8 @@ import * as archiver from 'archiver';
 const execFileAsync = promisify(execFile);
 import { Request, Response } from 'express';
 import sharp from 'sharp';
-import { Media } from './entities/media.entity';
+import { Media, MediaKind, MediaVisibility } from './entities/media.entity';
 import { MinioService } from './minio.service';
-import { DiscordWebhookService, MAX_DISCORD_UPLOAD_BYTES } from './discord-webhook.service';
-import { Tag } from '../tags/entities/tag.entity';
 import { TagsService } from '../tags/tags.service';
 import { BrowseMediaDto } from './dto/browse-media.dto';
 import { BulkDownloadDto } from './dto/bulk-download.dto';
@@ -32,11 +30,9 @@ import { PaginatedMediaResponseDto, MediaResponseDto } from './dto/media-respons
 import { Role } from '../common/types/role.enum';
 import { JwtPayload } from '../common/types/jwt-payload.type';
 
-const ALLOWED_MIME_PREFIXES = ['image/', 'video/'];
-
-// Media carrying either tag never gets posted to Discord — videos are usually too big
-// for the webhook upload limit, and a static thumbnail of a video/gif is just noise.
-const SKIP_WEBHOOK_TAG_SLUGS = new Set(['video', 'animated']);
+// Only used to decide `kind` (and whether to attempt a thumbnail) — every mimetype is
+// otherwise accepted, since the Files section allows arbitrary file types.
+const MEDIA_MIME_PREFIXES = ['image/', 'video/'];
 
 type TagRow = { media_id: string; tag_id: string; name: string; slug: string };
 
@@ -47,12 +43,19 @@ export class MediaService {
   constructor(
     @InjectRepository(Media)
     private readonly mediaRepo: Repository<Media>,
-    @InjectRepository(Tag)
-    private readonly tagRepo: Repository<Tag>,
     private readonly minioService: MinioService,
     private readonly tagsService: TagsService,
-    private readonly discordWebhookService: DiscordWebhookService,
   ) {}
+
+  // Admins bypass visibility entirely; everyone else only sees their own uploads plus
+  // anything explicitly marked public.
+  private canView(media: Media, user: JwtPayload): boolean {
+    return (
+      user.role === Role.Admin ||
+      media.uploaderId === user.sub ||
+      media.visibility === MediaVisibility.Public
+    );
+  }
 
   private async loadTagsForMedia(
     mediaIds: string[],
@@ -108,6 +111,8 @@ export class MediaService {
       fileName: m.fileName,
       mimeType: m.mimeType,
       sizeBytes: Number(m.sizeBytes),
+      visibility: m.visibility,
+      kind: m.kind,
       tags,
       createdAt: m.createdAt,
       updatedAt: m.updatedAt,
@@ -115,11 +120,11 @@ export class MediaService {
   }
 
   private async generateThumbnail(
-    buffer: Buffer,
+    filePath: string,
     uploaderId: string,
   ): Promise<string | null> {
     try {
-      const thumbBuffer = await sharp(buffer, { pages: 1 })
+      const thumbBuffer = await sharp(filePath, { pages: 1 })
         .resize(800, 800, { fit: 'inside', withoutEnlargement: true })
         .jpeg({ quality: 80 })
         .toBuffer();
@@ -140,18 +145,14 @@ export class MediaService {
   }
 
   private async generateVideoThumbnail(
-    buffer: Buffer,
-    mimeType: string,
+    filePath: string,
     uploaderId: string,
   ): Promise<string | null> {
-    const ext = mimeType.split('/')[1] ?? 'mp4';
-    const inputPath = join(tmpdir(), `${uuidv4()}.${ext}`);
     const outputPath = join(tmpdir(), `${uuidv4()}_thumb.jpg`);
     try {
-      await writeFile(inputPath, buffer);
       await execFileAsync('ffmpeg', [
         '-ss', '1',
-        '-i', inputPath,
+        '-i', filePath,
         '-frames:v', '1',
         '-vf', 'scale=800:800:force_original_aspect_ratio=decrease',
         '-y', outputPath,
@@ -170,148 +171,108 @@ export class MediaService {
       this.logger.warn(`Video thumbnail generation failed: ${(err as Error).message}`);
       return null;
     } finally {
-      await Promise.all([
-        unlink(inputPath).catch(() => undefined),
-        unlink(outputPath).catch(() => undefined),
-      ]);
+      await unlink(outputPath).catch(() => undefined);
     }
   }
 
-  // Fire-and-forget: posts to each distinct webhook among `tagsToNotify`, without blocking
-  // the caller. DiscordWebhookService swallows its own errors, so a failed post never
-  // surfaces here. `allTagSlugs` is the media's full tag set (not just the ones with a
-  // webhook) — used to decide whether to skip the post outright or fall back to the
-  // thumbnail when the original is too large.
-  private notifyTagWebhooks(media: Media, tagsToNotify: Tag[], allTagSlugs: string[]): void {
-    const webhookUrls = new Map<string, string[]>();
-    for (const tag of tagsToNotify) {
-      if (!tag.webhookUrl) continue;
-      const names = webhookUrls.get(tag.webhookUrl) ?? [];
-      names.push(tag.name);
-      webhookUrls.set(tag.webhookUrl, names);
-    }
-    if (webhookUrls.size === 0) return;
-
-    if (allTagSlugs.some((slug) => SKIP_WEBHOOK_TAG_SLUGS.has(slug))) {
-      this.logger.log(`Skipping Discord webhook post for ${media.id}: video/animated media`);
-      return;
-    }
-
-    const sizeBytes = Number(media.sizeBytes);
-    const useThumbnail = sizeBytes > MAX_DISCORD_UPLOAD_BYTES;
-
-    if (useThumbnail && !media.thumbnailKey) {
-      this.logger.warn(
-        `Skipping Discord webhook post for ${media.id}: no thumbnail available to fall back on`,
-      );
-      return;
-    }
-
-    void (async () => {
-      const key = useThumbnail ? media.thumbnailKey! : media.objectKey;
-      const mimeType = useThumbnail ? 'image/jpeg' : media.mimeType;
-      const fileName = useThumbnail ? `${media.fileName}.thumb.jpg` : media.fileName;
-      const note = useThumbnail
-        ? ` (static preview — original is ${(sizeBytes / (1024 * 1024)).toFixed(0)}MB, over Discord's limit)`
-        : '';
-
-      const stream = await this.minioService.getObject(key);
-      const chunks: Buffer[] = [];
-      for await (const chunk of stream) chunks.push(chunk as Buffer);
-      const buffer = Buffer.concat(chunks);
-
-      for (const [webhookUrl, names] of webhookUrls) {
-        await this.discordWebhookService.postImage(
-          webhookUrl,
-          buffer,
-          fileName,
-          mimeType,
-          `Tagged **${names.join(', ')}**${note}`,
-        );
-      }
-    })().catch((err) =>
-      this.logger.warn(`Discord notification failed for ${media.id}: ${(err as Error).message}`),
-    );
+  private async hashFile(filePath: string): Promise<string> {
+    const hash = createHash('sha256');
+    const stream = createReadStream(filePath);
+    for await (const chunk of stream) hash.update(chunk as Buffer);
+    return hash.digest('hex');
   }
 
-  async upload(file: Express.Multer.File, uploaderId: string): Promise<Media> {
+  async upload(
+    file: Express.Multer.File,
+    uploaderId: string,
+    visibility: MediaVisibility = MediaVisibility.Private,
+  ): Promise<Media> {
     const mimeType = file.mimetype;
-    if (!ALLOWED_MIME_PREFIXES.some((p) => mimeType.startsWith(p))) {
-      throw new UnsupportedMediaTypeException('Only image and video files are allowed');
-    }
+    const kind = MEDIA_MIME_PREFIXES.some((p) => mimeType.startsWith(p))
+      ? MediaKind.Media
+      : MediaKind.File;
 
-    const contentHash = createHash('sha256').update(file.buffer).digest('hex');
-
-    const existing = await this.mediaRepo.findOne({ where: { contentHash } });
-    if (existing) {
-      throw new ConflictException({
-        message: 'This file has already been uploaded',
-        existingId: existing.id,
-      });
-    }
-
-    const ext = extname(file.originalname) || '';
-    const objectKey = `media/${uploaderId}/${uuidv4()}${ext}`;
-
-    const { Readable } = await import('stream');
-    await this.minioService.putObject(
-      objectKey,
-      Readable.from(file.buffer),
-      file.size,
-      mimeType,
-    );
-
-    const thumbnailKey = mimeType.startsWith('image/')
-      ? await this.generateThumbnail(file.buffer, uploaderId)
-      : mimeType.startsWith('video/')
-        ? await this.generateVideoThumbnail(file.buffer, mimeType, uploaderId)
-        : null;
-
-    let media: Media;
     try {
-      const entity = this.mediaRepo.create({
-        uploaderId,
+      const contentHash = await this.hashFile(file.path);
+
+      const existing = await this.mediaRepo.findOne({ where: { contentHash } });
+      if (existing) {
+        throw new ConflictException({
+          message: 'This file has already been uploaded',
+          existingId: existing.id,
+        });
+      }
+
+      const ext = extname(file.originalname) || '';
+      const objectKey = `media/${uploaderId}/${uuidv4()}${ext}`;
+
+      await this.minioService.putObject(
         objectKey,
-        thumbnailKey: thumbnailKey ?? undefined,
-        fileName: file.originalname,
+        createReadStream(file.path),
+        file.size,
         mimeType,
-        sizeBytes: file.size,
-        contentHash,
-      });
-      media = await this.mediaRepo.save(entity);
-    } catch (err) {
-      await this.minioService.removeObject(objectKey).catch(() => undefined);
-      if (thumbnailKey) {
-        await this.minioService.removeObject(thumbnailKey).catch(() => undefined);
-      }
-      throw err;
-    }
+      );
 
-    const autoTagNames = this.getAutoTagNames(mimeType, file.buffer);
-    if (autoTagNames.length > 0) {
+      const thumbnailKey = mimeType.startsWith('image/')
+        ? await this.generateThumbnail(file.path, uploaderId)
+        : mimeType.startsWith('video/')
+          ? await this.generateVideoThumbnail(file.path, uploaderId)
+          : null;
+
+      let media: Media;
       try {
-        const tags = await Promise.all(
-          autoTagNames.map((name) => this.tagsService.findOrCreate(name, uploaderId)),
-        );
-        const placeholders = tags.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
-        const params = tags.flatMap((t) => [media.id, t.id]);
-        await this.mediaRepo.query(
-          `INSERT INTO media_tags (media_id, tag_id) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
-          params,
-        );
-        this.notifyTagWebhooks(media, tags, tags.map((t) => t.slug));
+        const entity = this.mediaRepo.create({
+          uploaderId,
+          objectKey,
+          thumbnailKey: thumbnailKey ?? undefined,
+          fileName: file.originalname,
+          mimeType,
+          sizeBytes: file.size,
+          contentHash,
+          visibility,
+          kind,
+        });
+        media = await this.mediaRepo.save(entity);
       } catch (err) {
-        this.logger.warn(`Auto-tagging failed for ${media.id}: ${(err as Error).message}`);
+        await this.minioService.removeObject(objectKey).catch(() => undefined);
+        if (thumbnailKey) {
+          await this.minioService.removeObject(thumbnailKey).catch(() => undefined);
+        }
+        throw err;
       }
-    }
 
-    return media;
+      if (kind === MediaKind.Media) {
+        const autoTagNames = await this.getAutoTagNames(mimeType, file.path);
+        if (autoTagNames.length > 0) {
+          try {
+            const tags = await Promise.all(
+              autoTagNames.map((name) => this.tagsService.findOrCreate(name, uploaderId)),
+            );
+            const placeholders = tags.map((_, i) => `($${i * 2 + 1}, $${i * 2 + 2})`).join(', ');
+            const params = tags.flatMap((t) => [media.id, t.id]);
+            await this.mediaRepo.query(
+              `INSERT INTO media_tags (media_id, tag_id) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
+              params,
+            );
+          } catch (err) {
+            this.logger.warn(`Auto-tagging failed for ${media.id}: ${(err as Error).message}`);
+          }
+        }
+      }
+
+      return media;
+    } finally {
+      await unlink(file.path).catch(() => undefined);
+    }
   }
 
-  private getAutoTagNames(mimeType: string, buffer: Buffer): string[] {
+  private async getAutoTagNames(mimeType: string, filePath: string): Promise<string[]> {
     if (mimeType.startsWith('video/')) return ['video'];
     if (mimeType === 'image/gif') return ['animated'];
-    if (mimeType === 'image/webp' && this.isAnimatedWebP(buffer)) return ['animated'];
+    if (mimeType === 'image/webp') {
+      const buffer = await readFile(filePath);
+      if (this.isAnimatedWebP(buffer)) return ['animated'];
+    }
     return [];
   }
 
@@ -320,13 +281,33 @@ export class MediaService {
     return buffer.length > 12 && buffer.indexOf(Buffer.from('ANIM')) !== -1;
   }
 
-  async browse(dto: BrowseMediaDto): Promise<PaginatedMediaResponseDto> {
+  async browse(dto: BrowseMediaDto, user: JwtPayload): Promise<PaginatedMediaResponseDto> {
     const page = dto.page ?? 1;
     const limit = dto.limit ?? 50;
     const skip = (page - 1) * limit;
 
     // Build candidate ID set from filters (null = no restriction).
     let candidateIds: string[] | null = null;
+
+    // Visibility scoping: non-admins only ever see their own uploads plus public ones.
+    if (user.role !== Role.Admin) {
+      const visRows: { id: string }[] = await this.mediaRepo.query(
+        `SELECT id FROM media WHERE uploader_id = $1 OR visibility = 'public'`,
+        [user.sub],
+      );
+      candidateIds = visRows.map((r) => r.id);
+      if (candidateIds.length === 0) return { data: [], total: 0, page, limit };
+    }
+
+    if (dto.kind) {
+      const kindRows: { id: string }[] = await this.mediaRepo.query(
+        `SELECT id FROM media WHERE kind = $1`,
+        [dto.kind],
+      );
+      const kindIds = new Set(kindRows.map((r) => r.id));
+      candidateIds = candidateIds ? candidateIds.filter((id) => kindIds.has(id)) : [...kindIds];
+      if (candidateIds.length === 0) return { data: [], total: 0, page, limit };
+    }
 
     const tagSlugs = dto.tags
       ? dto.tags.split(',').map((s) => s.trim()).filter(Boolean)
@@ -436,12 +417,20 @@ export class MediaService {
     return { data: items.map((m) => this.toDto(m, tagMap.get(m.id) ?? [])), total, page, limit };
   }
 
-  async findOne(id: string): Promise<Media> {
+  private async loadMediaWithTags(id: string): Promise<Media> {
     const media = await this.mediaRepo.findOne({ where: { id } });
     if (!media) throw new NotFoundException('Media not found');
 
     const tagMap = await this.loadTagsForMedia([id]);
-    media.tags = (tagMap.get(id) ?? []) as unknown as Tag[];
+    media.tags = (tagMap.get(id) ?? []) as unknown as Media['tags'];
+    return media;
+  }
+
+  async findOne(id: string, user: JwtPayload): Promise<Media> {
+    const media = await this.loadMediaWithTags(id);
+    // Hide existence rather than 403 — a private item should look identical to a
+    // nonexistent one to anyone who isn't the uploader or an admin.
+    if (!this.canView(media, user)) throw new NotFoundException('Media not found');
     return media;
   }
 
@@ -481,9 +470,16 @@ export class MediaService {
     return false;
   }
 
-  async download(id: string, thumbnail: boolean, req: Request, res: Response): Promise<void> {
+  async download(
+    id: string,
+    thumbnail: boolean,
+    req: Request,
+    res: Response,
+    user: JwtPayload,
+  ): Promise<void> {
     const media = await this.mediaRepo.findOne({ where: { id } });
     if (!media) throw new NotFoundException('Media not found');
+    if (!this.canView(media, user)) throw new NotFoundException('Media not found');
 
     const useThumbnail = thumbnail && !!media.thumbnailKey;
     const key = useThumbnail ? media.thumbnailKey : media.objectKey;
@@ -516,7 +512,7 @@ export class MediaService {
     stream.pipe(res);
   }
 
-  async bulkDownload(dto: BulkDownloadDto, res: Response): Promise<void> {
+  async bulkDownload(dto: BulkDownloadDto, res: Response, user: JwtPayload): Promise<void> {
     const tagSlugs = dto.tags ?? [];
 
     let items: Media[];
@@ -525,6 +521,12 @@ export class MediaService {
       items = ids.length > 0 ? await this.mediaRepo.find({ where: { id: In(ids) } }) : [];
     } else {
       items = await this.mediaRepo.find();
+    }
+
+    if (user.role !== Role.Admin) {
+      items = items.filter(
+        (item) => item.uploaderId === user.sub || item.visibility === MediaVisibility.Public,
+      );
     }
 
     res.setHeader('Content-Type', 'application/zip');
@@ -559,6 +561,9 @@ export class MediaService {
   async addTags(id: string, tagNames: string[], createdById: string, isAdmin = false): Promise<Media> {
     const media = await this.mediaRepo.findOne({ where: { id } });
     if (!media) throw new NotFoundException('Media not found');
+    if (!isAdmin && media.uploaderId !== createdById && media.visibility !== MediaVisibility.Public) {
+      throw new NotFoundException('Media not found');
+    }
 
     const tags = await Promise.all(
       tagNames.map(async (name) => {
@@ -583,22 +588,33 @@ export class MediaService {
         `INSERT INTO media_tags (media_id, tag_id) VALUES ${placeholders} ON CONFLICT DO NOTHING`,
         params,
       );
-
-      const existingTags = existingIds.size > 0
-        ? await this.tagRepo.find({ where: { id: In([...existingIds]) } })
-        : [];
-      const allTagSlugs = [...existingTags, ...newTags].map((t) => t.slug);
-      this.notifyTagWebhooks(media, newTags, allTagSlugs);
     }
 
-    return this.findOne(id);
+    return this.loadMediaWithTags(id);
   }
 
-  async removeTag(mediaId: string, tagId: string): Promise<Media> {
+  async removeTag(mediaId: string, tagId: string, user: JwtPayload): Promise<Media> {
+    const media = await this.mediaRepo.findOne({ where: { id: mediaId } });
+    if (!media) throw new NotFoundException('Media not found');
+    if (!this.canView(media, user)) throw new NotFoundException('Media not found');
+
     await this.mediaRepo.query(
       `DELETE FROM media_tags WHERE media_id = $1 AND tag_id = $2`,
       [mediaId, tagId],
     );
-    return this.findOne(mediaId);
+    return this.loadMediaWithTags(mediaId);
+  }
+
+  async setVisibility(id: string, visibility: MediaVisibility, user: JwtPayload): Promise<Media> {
+    const media = await this.mediaRepo.findOne({ where: { id } });
+    if (!media) throw new NotFoundException('Media not found');
+
+    if (user.role !== Role.Admin && media.uploaderId !== user.sub) {
+      throw new ForbiddenException('You do not own this media');
+    }
+
+    media.visibility = visibility;
+    await this.mediaRepo.save(media);
+    return this.loadMediaWithTags(id);
   }
 }

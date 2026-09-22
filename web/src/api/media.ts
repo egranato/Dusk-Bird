@@ -1,5 +1,5 @@
 import api from '../lib/axios';
-import type { MediaItem, PaginatedMedia } from '../types/api';
+import type { MediaItem, MediaKind, MediaVisibility, PaginatedMedia } from '../types/api';
 
 function getJwtExpiryMs(token: string): number | null {
   try {
@@ -31,6 +31,7 @@ function getStableMediaToken(): string {
 }
 
 export async function browse(params: {
+  kind?: MediaKind;
   tags?: string;
   excludeTags?: string;
   mode?: 'and' | 'or';
@@ -52,9 +53,11 @@ export async function getOne(id: string): Promise<MediaItem> {
 export async function upload(
   file: File,
   onProgress?: (percent: number) => void,
+  visibility: MediaVisibility = 'private',
 ): Promise<MediaItem> {
   const form = new FormData();
   form.append('file', file);
+  form.append('visibility', visibility);
   const { data } = await api.post<MediaItem>('/api/v1/media/upload', form, {
     headers: { 'Content-Type': 'multipart/form-data' },
     onUploadProgress: (evt) => {
@@ -63,6 +66,11 @@ export async function upload(
       }
     },
   });
+  return data;
+}
+
+export async function setVisibility(id: string, visibility: MediaVisibility): Promise<MediaItem> {
+  const { data } = await api.patch<MediaItem>(`/api/v1/media/${id}/visibility`, { visibility });
   return data;
 }
 

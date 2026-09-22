@@ -34,13 +34,13 @@ export async function denyRequest(id: string): Promise<void> {
   await api.post(`/api/v1/tags/requests/${id}/deny`);
 }
 
-export async function create(name: string, webhookUrl?: string): Promise<TagResponse> {
-  const { data } = await api.post<TagResponse>('/api/v1/tags', { name, webhookUrl });
+export async function create(name: string): Promise<TagResponse> {
+  const { data } = await api.post<TagResponse>('/api/v1/tags', { name });
   return data;
 }
 
-export async function update(id: string, name: string, webhookUrl?: string): Promise<TagResponse> {
-  const { data } = await api.patch<TagResponse>(`/api/v1/tags/${id}`, { name, webhookUrl });
+export async function update(id: string, name: string): Promise<TagResponse> {
+  const { data } = await api.patch<TagResponse>(`/api/v1/tags/${id}`, { name });
   return data;
 }
 

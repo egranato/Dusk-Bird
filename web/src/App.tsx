@@ -6,6 +6,8 @@ import LoginPage from './pages/LoginPage';
 import GalleryPage from './pages/GalleryPage';
 import AdminPage from './pages/AdminPage';
 import TaggingPage from './pages/TaggingPage';
+import FilesPage from './pages/FilesPage';
+import MediaDetailPage from './pages/MediaDetailPage';
 
 export default function App() {
   const { token } = useAuth();
@@ -29,6 +31,22 @@ export default function App() {
         element={
           <ProtectedRoute>
             <TaggingPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/files"
+        element={
+          <ProtectedRoute>
+            <FilesPage />
+          </ProtectedRoute>
+        }
+      />
+      <Route
+        path="/media/:id"
+        element={
+          <ProtectedRoute>
+            <MediaDetailPage />
           </ProtectedRoute>
         }
       />

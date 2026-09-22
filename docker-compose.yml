@@ -14,6 +14,14 @@ services:
       MINIO_ENDPOINT: minio
       MINIO_PORT: "9000"
       MINIO_USE_SSL: "false"
+      UPLOAD_TMP_DIR: /tmp/uploads
+    volumes:
+      # Uploads (up to 20GB) are streamed to disk before being pushed to MinIO — this
+      # needs to live on the same large volume as MinIO's data, not the container's
+      # ephemeral layer, or a big upload can fill the NUC's root filesystem.
+      - type: bind
+        source: ${NUC_STORAGE_PATH}/tmp-uploads
+        target: /tmp/uploads
     depends_on:
       postgres:
         condition: service_healthy

@@ -64,7 +64,7 @@ export class TagsService {
       (await this.findBySpaceInsensitive(name));
     if (existing) throw new ConflictException('A tag with that name already exists');
 
-    const tag = this.tagRepo.create({ name, slug, createdById, webhookUrl: dto.webhookUrl || null });
+    const tag = this.tagRepo.create({ name, slug, createdById });
     return this.tagRepo.save(tag);
   }
 
@@ -124,7 +124,7 @@ export class TagsService {
 
   // ── Standard CRUD ────────────────────────────────────────────────────────────
 
-  async findAll(includeWebhook = false): Promise<TagResponseDto[]> {
+  async findAll(): Promise<TagResponseDto[]> {
     const rows = await this.tagRepo
       .createQueryBuilder('t')
       .loadRelationCountAndMap('t.usageCount', 't.media')
@@ -137,7 +137,6 @@ export class TagsService {
       slug: t.slug,
       usageCount: (t as Tag & { usageCount: number }).usageCount ?? 0,
       createdAt: t.createdAt,
-      ...(includeWebhook ? { webhookUrl: t.webhookUrl } : {}),
     }));
   }
 
@@ -159,9 +158,6 @@ export class TagsService {
 
     tag.name = name;
     tag.slug = slug;
-    if (dto.webhookUrl !== undefined) {
-      tag.webhookUrl = dto.webhookUrl === '' ? null : dto.webhookUrl;
-    }
     return this.tagRepo.save(tag);
   }
 
