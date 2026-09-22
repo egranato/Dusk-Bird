@@ -2,11 +2,15 @@
 
 Runs the full backend stack (NestJS, PostgreSQL, MinIO) in Docker with hot reload. Caddy is excluded — no real domain or cert needed locally. The React frontend runs as a separate Vite dev server.
 
-Every `docker compose` command below passes both compose files explicitly — `docker-compose.dev.yml` is intentionally *not* auto-merged (that's what caused the NUC to accidentally run in dev mode), so local dev always needs `-f docker-compose.yml -f docker-compose.dev.yml`. Consider a shell alias, e.g. (PowerShell) `function dcd { docker compose -f docker-compose.yml -f docker-compose.dev.yml @args }`, then use `dcd up -d` etc.
+> **Shortcut:** every command below is also available as `.\duskbird.ps1 <command>` from the repo root — e.g. `.\duskbird.ps1 dev-up`, `.\duskbird.ps1 dev-migrate`. Run `.\duskbird.ps1 help` for the full list (dev and NUC production). The raw commands are kept below for reference / anyone not on the script.
+
+Every `docker compose` command below passes both compose files explicitly — `docker-compose.dev.yml` is intentionally *not* auto-merged (that's what caused the NUC to accidentally run in dev mode), so local dev always needs `-f docker-compose.yml -f docker-compose.dev.yml`. `duskbird.ps1` already does this for every `dev-*` command.
 
 ---
 
 ## First-time setup
+
+> **Shortcut:** `.\duskbird.ps1 dev-setup` does steps 1–3 for you (skips anything that already exists). Still read step 2 — you need to edit the values in `.env` yourself either way.
 
 ### 1 — Install frontend dependencies
 
@@ -93,16 +97,18 @@ Open **http://localhost:5173** and sign in with `admin@local.dev` / `localadmin1
 ## Day-to-day
 
 ```powershell
-# Start the backend (from repo root)
+.\duskbird.ps1 dev-up      # start the backend (from repo root)
+.\duskbird.ps1 dev-web     # start the frontend (in a separate terminal)
+.\duskbird.ps1 dev-down    # stop the backend
+.\duskbird.ps1 dev-logs                    # all services
+.\duskbird.ps1 dev-logs -Service api       # API only
+```
+
+Or by hand:
+```powershell
 docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d
-
-# Start the frontend (in a separate terminal)
 cd web; npm run dev
-
-# Stop the backend
 docker compose down
-
-# Stream logs
 docker compose logs -f api       # API only
 docker compose logs -f           # all services
 ```
@@ -110,14 +116,17 @@ docker compose logs -f           # all services
 Both the API and frontend hot-reload on file save — no restarts needed during development.
 
 ```powershell
-# After adding a new database migration
-docker compose exec api npm run migration:run
+.\duskbird.ps1 dev-migrate          # after adding a new database migration
+.\duskbird.ps1 dev-migrate-revert   # revert the last migration
+```
 
-# Revert the last migration
+Or by hand:
+```powershell
+docker compose exec api npm run migration:run
 docker compose exec api npm run migration:revert
 ```
 
-> **Hot reload note:** On Windows with Docker Desktop, the NestJS file watcher occasionally misses changes due to how volume mounts work. If a backend change doesn't appear to take effect, run `docker compose restart api` to force a reload.
+> **Hot reload note:** On Windows with Docker Desktop, the NestJS file watcher occasionally misses changes due to how volume mounts work. If a backend change doesn't appear to take effect, run `.\duskbird.ps1 dev-restart` (or `docker compose restart api`) to force a reload.
 
 ---
 
@@ -131,6 +140,11 @@ There are three levels of reset depending on what you need to clear.
 
 Wipes PostgreSQL (all users, media records, tags) but leaves the files in `local-storage/` untouched. Useful when migrations have changed significantly and you want a clean schema without re-uploading everything.
 
+```powershell
+.\duskbird.ps1 dev-reset-db
+```
+
+Or by hand:
 ```powershell
 docker compose down
 docker volume rm duskbird_postgres_data
@@ -146,6 +160,11 @@ docker compose exec api npm run seed:admin
 Clears everything stored in MinIO (original files and thumbnails) while leaving the database records intact. Note: the database will then contain orphaned records pointing to files that no longer exist, so this is mainly useful before a full re-upload.
 
 ```powershell
+.\duskbird.ps1 dev-reset-files
+```
+
+Or by hand:
+```powershell
 Remove-Item local-storage\* -Recurse -Force
 docker compose restart minio
 ```
@@ -156,6 +175,11 @@ docker compose restart minio
 
 Completely fresh start. All data is lost.
 
+```powershell
+.\duskbird.ps1 dev-reset-all
+```
+
+Or by hand:
 ```powershell
 # Stop everything and wipe named volumes (postgres, caddy)
 docker compose down -v

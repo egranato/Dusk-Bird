@@ -54,6 +54,7 @@ DuskBird/
 ├── Caddyfile     Reverse proxy config (choose your TLS option inside)
 ├── docker-compose.yml
 ├── docker-compose.dev.yml        Dev overrides (hot reload, exposed ports) — pass explicitly, not auto-merged
+├── duskbird.ps1                  One script for every dev/NUC command — `.\duskbird.ps1 help`
 └── local-storage/                Created automatically for local dev (gitignored)
 ```
 
@@ -145,25 +146,26 @@ echo "UUID=<uuid> /mnt/storage1 ext4 defaults,nofail 0 2" | sudo tee -a /etc/fst
 sudo mount -a
 ```
 
-### 4 — Start the stack
+### 4 — Start the stack, run migrations, seed admin
+
+```powershell
+.\duskbird.ps1 prod-deploy
+```
+
+This builds and starts every container, runs migrations against the compiled data source (the production image only ships `dist/`, not `src/`, so this isn't the same as the `migration:run` npm script), and seeds the admin account. `seed:admin` reads `ADMIN_EMAIL`/`ADMIN_INITIAL_PASSWORD` from `.env` and is safe to re-run.
+
+Or by hand:
 
 ```bash
 docker compose up -d --build
 docker compose logs -f   # watch until all services are healthy (~30s)
-```
-
-### 5 — Run migrations and seed admin
-
-The production image only ships compiled `dist/`, not `src/` — run migrations against the compiled data source, not the `migration:run` npm script (which expects `src/` and ts-node):
-
-```bash
 docker compose exec api node_modules/.bin/typeorm migration:run -d dist/database/data-source.js
 docker compose exec api npm run seed:admin
 ```
 
-`seed:admin` reads `ADMIN_EMAIL` and `ADMIN_INITIAL_PASSWORD` from `.env`. Safe to run multiple times.
+Run `.\duskbird.ps1 help` any time for the full list of dev and production commands (restart, logs, backup, reset, etc).
 
-### 6 — Verify
+### 5 — Verify
 
 ```bash
 curl https://your-nuc.tplink.com/api/v1/health
@@ -263,11 +265,19 @@ All endpoints except `/api/v1/health` and `POST /api/v1/auth/login` require `Aut
 
 ## Updating
 
+```powershell
+.\duskbird.ps1 prod-update
+```
+
+Or by hand:
+
 ```bash
 git pull
 docker compose up -d --build
 docker compose exec api node_modules/.bin/typeorm migration:run -d dist/database/data-source.js
 ```
+
+**Changed `.env` and just need to apply it (no code changes)?** A plain `docker compose restart` reuses the existing containers as-is and will **not** pick up the new values — use `.\duskbird.ps1 prod-restart` (or `docker compose up -d --force-recreate`) instead.
 
 Frontend:
 
@@ -282,6 +292,11 @@ firebase deploy --only hosting
 ## Backup
 
 **Database:**
+```powershell
+.\duskbird.ps1 prod-backup
+```
+
+Or by hand:
 ```bash
 docker compose exec postgres pg_dump -U $DB_USER $DB_NAME > backup_$(date +%Y%m%d).sql
 ```
@@ -322,9 +337,10 @@ ls -la $NUC_STORAGE_PATH
 ```
 
 **Reset everything** (destructive — drops DB data and named volumes; media files on the drive are safe):
-```bash
-docker compose down -v
+```powershell
+.\duskbird.ps1 prod-reset
 ```
+Or by hand: `docker compose down -v`
 
 ---
 
